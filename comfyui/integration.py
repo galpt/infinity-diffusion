@@ -40,6 +40,7 @@ def sample_infinity(
     disable: bool = False,
     alpha: float = 0.5,
     beta: float = 0.5,
+    zeta: float = 0.20,
 ) -> torch.Tensor:
     """ComfyUI k_diffusion sampler function for InfinitySampler.
 
@@ -49,7 +50,7 @@ def sample_infinity(
     The ``disable`` parameter is accepted but not consumed (ComfyUI provides
     its own progress bar handling internally).
     """
-    sampler = InfinitySampler(alpha=alpha, beta=beta)
+    sampler = InfinitySampler(alpha=alpha, beta=beta, zeta=zeta)
     s_in = x.new_ones([x.shape[0]])
     extra_args = {} if extra_args is None else extra_args
 
@@ -72,6 +73,14 @@ def sample_infinity(
             delta = d - d_prev
             ema = (1.0 - alpha) * ema + alpha * delta
             x = x + (d + beta * ema) * (sigmas[i + 1] - sigmas[i])
+
+            # Self-adaptive noise — proportional to EMA magnitude.
+            d_norm = d.abs().mean()
+            ema_norm = ema.abs().mean() / (d_norm + 1e-8)
+            noise_scale = min(zeta, zeta * ema_norm * 2.0)
+            if noise_scale > 0.001:
+                noise = torch.randn_like(x) * sigmas[i + 1] * noise_scale
+                x = x + noise
 
         d_prev = d
 

@@ -157,43 +157,44 @@ class InfinityScheduler:
 
 
 class InfinitySampler:
-    """Damped second-order Adams-Bashforth sampler with EMA correction.
+    """Self-stabilizing sampler with EMA correction and adaptive noise.
 
-    The first step uses an Euler bootstrap (no correction available).
-    Subsequent steps apply an EMA-modulated correction to the ODE derivative:
+    The first step uses an Euler bootstrap.  Subsequent steps apply an
+    EMA-modulated correction to the ODE derivative, plus a self-adaptive
+    noise injection that helps clean up edges without sacrificing stability.
 
         d_i       = (x_i - f(x_i, sigma_i)) / sigma_i
         ema_i     = (1 - alpha) * ema_{i-1} + alpha * (d_i - d_{i-1})
-        x_{i+1}   = x_i + h_i * (d_i + beta * ema_i)
+        x_{i+1}   = x_i + h * (d_i + beta * ema_i)
+        x_{i+1}  += noise * sigma_{i+1} * zeta * ema_norm   (adaptive)
 
-    When ema -> 0 (converged region) the update collapses to a plain Euler
-    step, providing stability in regions where the ODE is stiff.
+    The noise injection is proportional to the EMA magnitude.  When the EMA
+    is large (derivative still changing), noise helps the model find cleaner
+    edges.  When the EMA decays to zero (converged), noise shuts off and
+    the sampler becomes purely deterministic.
 
     Parameters
     ----------
     alpha : float, optional
-        EMA coefficient in (0, 1]. Higher values weight recent changes more
-        heavily.  Default 0.5.
+        EMA coefficient in (0, 1].  Default 0.5.
     beta : float, optional
-        Correction strength, must be < 1 for damped stability.  Default 0.5.
-        At beta = 0 the sampler reduces to Euler regardless of alpha.
-
-    Notes
-    -----
-    The update is equivalent to Adams-Bashforth 2 with a damping factor:
-    standard AB2 uses coefficients (1.5, -0.5); this form uses
-    (1 + beta*alpha, -beta*alpha) which, at the defaults alpha = beta = 0.5,
-    gives (1.25, -0.25) — strictly more stable than AB2 while retaining
-    approximately 80 % of the accuracy improvement over Euler.
+        Correction strength, must be < 1.  Default 0.5.
+    zeta : float, optional
+        Maximum noise injection coefficient.  Default 0.20.
+        Noise_scale = min(zeta, zeta * ema_norm * 2.0), so at
+        EMA_norm = 0.5 the effective noise_scale reaches zeta.
     """
 
-    def __init__(self, alpha: float = 0.5, beta: float = 0.5):
+    def __init__(self, alpha: float = 0.5, beta: float = 0.5, zeta: float = 0.20):
         if not 0.0 < alpha <= 1.0:
             raise ValueError(f"alpha must be in (0, 1], got {alpha}")
         if not 0.0 <= beta < 1.0:
             raise ValueError(f"beta must be in [0, 1), got {beta}")
+        if not 0.0 <= zeta <= 1.0:
+            raise ValueError(f"zeta must be in [0, 1], got {zeta}")
         self.alpha = alpha
         self.beta = beta
+        self.zeta = zeta
 
     @torch.no_grad()
     def sample(
@@ -244,6 +245,15 @@ class InfinitySampler:
                 delta = d - d_prev
                 ema = (1.0 - self.alpha) * ema + self.alpha * delta
                 x = x + (d + self.beta * ema) * (sigmas[i + 1] - sigmas[i])
+
+                # Self-adaptive noise — proportional to EMA magnitude.
+                # Shuts off automatically when ema -> 0 (converged).
+                d_norm = d.abs().mean()
+                ema_norm = ema.abs().mean() / (d_norm + 1e-8)
+                noise_scale = min(self.zeta, self.zeta * ema_norm * 2.0)
+                if noise_scale > 0.001:
+                    noise = torch.randn_like(x) * sigmas[i + 1] * noise_scale
+                    x = x + noise
 
             d_prev = d
 
