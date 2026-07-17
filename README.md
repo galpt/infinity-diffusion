@@ -98,10 +98,17 @@ All 9 sampler/scheduler combinations, same model, seed, and prompt
 (waiMatureIllustrious v2.0, SDXL, seed 3311874133078797565) at 512x512,
 30 steps, CFG 7.0.
 
-Prompt: *1girl, solo, anime girl, detailed face, detailed eyes, intricate hair,
-sharp black outlines, clean lineart, high contrast, crown, jewelry, lace trim*
+Positive prompt:
 
-Negative prompt: *worst quality, low quality, blurry, jpeg artifacts, bad anatomy*
+```
+close-up, front view, upper body shot, Vogue magazine style, soft studio lighting, high contrast, detailed, sharp focus, high resolution, masterpiece. 1girl, solo, Advent goddess, black hair, hime cut, bright red eyes, mature female, pale skin, pink lips. standing, looking down, parted lips.
+```
+
+Negative prompt:
+
+```
+lowres, bad anatomy, bad hands, text, error, worst quality, low quality, blurry, jpeg artifacts, signature, watermark, username, shiny skin, greasy skin, extra fingers, multiple views, mole, bubbles, frame.
+```
 
 | Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
 |---|---|---|---|
