@@ -7,6 +7,28 @@ before applying corrections.  The scheduler starts with a sine-perturbed
 timestep distribution and inserts intermediate steps wherever the log-sigma
 gap exceeds 2x the average.
 
+## When to use it
+
+**Detailed scenes.**  The EMA correction keeps refining small details across
+multiple steps without overshooting, which helps when the image has faces,
+hands, textures, and background objects competing for attention.
+
+**Batch generation.**  Deterministic output means you can compare prompts
+or models without noise injection confounding the results.
+
+**Any step count, one setting.**  Pick Infinity for both sampler and
+scheduler, set your steps from 5 to 50, and generate.  The scheduler adapts
+automatically &mdash; the self-balancing gap enforcement prevents overly
+large steps regardless of step count.
+
+When you might prefer something else:
+
+| If you want... | Use... |
+|---|---|
+| Maximum per-step accuracy | DPM++ 2M (may overshoot) |
+| Deterministic, lower risk | Infinity sampler |
+| Minimum resource usage | Euler |
+
 ## Sampler
 
 Euler is stable but needs many steps for fine detail.  Higher-order methods
