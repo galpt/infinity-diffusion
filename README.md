@@ -1,11 +1,11 @@
 # Infinity Diffusion
 
-A self-balancing IIR filter sampler and gap-enforcing scheduler for diffusion
-models.  The sampler tracks both velocity (first difference) and acceleration
-(second difference) of the denoising derivative, and checks three invariants
-before applying corrections.  The scheduler starts with a sine-perturbed
-timestep distribution and inserts intermediate steps wherever the log-sigma
-gap exceeds 2x the average.
+An invariant-checking IIR filter sampler and sine-perturbed scheduler for
+diffusion models.  The sampler tracks both velocity (first difference) and
+acceleration (second difference) of the denoising derivative, and checks
+three invariants before applying corrections.  The scheduler uses a sine
+perturbation to linear timesteps that shifts budget from the first step
+toward the last for more cleanup room.
 
 ## When to use it
 
@@ -18,8 +18,7 @@ or models without noise injection confounding the results.
 
 **Any step count, one setting.**  Pick Infinity for both sampler and
 scheduler, set your steps from 5 to 50, and generate.  The scheduler adapts
-automatically &mdash; the self-balancing gap enforcement prevents overly
-large steps regardless of step count.
+automatically &mdash; near-linear at low steps, sine-perturbed at high steps.
 
 When you might prefer something else:
 
@@ -54,15 +53,25 @@ The common sigma schedules (Karras, exponential) compute sigmas directly in
 sigma space, producing noise levels outside the model's training distribution.
 This causes jagged edges on thin high-contrast features.
 
-The Infinity scheduler starts with a sine-perturbed timestep distribution:
+The Infinity scheduler uses a sine perturbation to linear timesteps:
 
 ```
-f(u) = u - s * sin(pi * u) / pi
+f(u) = u - s * sin(pi * u) / pi    u in [0, 1]
 ```
 
-Then enforces a self-balancing invariant: any log-sigma gap exceeding 2x the
-average is split by inserting an intermediate timestep.  This prevents overly
-large steps while keeping noise levels inside the training distribution.
+At u=0 the derivative is (1 - s): the first step covers less sigma range,
+reducing the initial denoising shock.  At u=1 the derivative is (1 + s): the
+last step covers more sigma range, giving the final cleanup noticeably more
+room.  The strength s adapts to the step count:
+
+| Steps | s | First step gap | Last step gap |
+|---|---|---|---|
+| 10 | 0.20 | 0.80x linear | 1.20x linear |
+| 20 | 0.40 | 0.60x linear | 1.40x linear |
+| 30 | 0.60 | 0.40x linear | 1.60x linear |
+
+All sigmas pass through the model's native sigma function, so every noise
+level is from the model's training set &mdash; no jagged edges.
 
 ## Benchmark
 

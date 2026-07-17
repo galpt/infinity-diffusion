@@ -1,11 +1,11 @@
 """
-infinity_diffusion.py — Limit-based asymptotic sampling for diffusion models.
+infinity_diffusion.py — Self-balancing invariant-checking sampler for diffusion models.
 
-Provides two components derived from the Infinity kernel scheduler's design
-philosophy (EMA-modulated correction and asymptotic limit-based scheduling):
+Provides two components:
 
-  - InfinitySampler   — damped 2nd-order Adams-Bashforth with EMA correction
-  - InfinityScheduler — power-ramp sigma schedule
+  - InfinitySampler   — IIR filter sampler with velocity/acceleration EMA
+                        and invariant-based correction clamping
+  - InfinityScheduler — sine-perturbed sigma schedule with adaptive strength
 
 Both are framework-agnostic: they accept and return plain torch Tensors and
 do not depend on ComfyUI, Hugging Face Diffusers, or any specific diffusion
