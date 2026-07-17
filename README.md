@@ -56,7 +56,7 @@ high contrast, masterpiece, best quality*
 | DPM++ 2M + normal scheduler | ![dpmpp_2m+normal](assets/d2_30_ast_00001_.png) |
 | Euler + normal scheduler | ![euler+normal](assets/eu_30_ast_00001_.png) |
 
-Look at the hair strands and eye details -- these areas show the difference
+Look at the hair strands and eye details &mdash; these areas show the difference
 between samplers most clearly.  The Infinity sampler tends to produce more
 consistent refinement across steps without the harsh artifacts that can appear
 with DPM++ 2M on sharp trajectory changes.
