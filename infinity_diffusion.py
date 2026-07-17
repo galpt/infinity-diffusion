@@ -163,24 +163,21 @@ class InfinityScheduler:
 
 
 class InfinitySampler:
-    """Self-adaptive sampler with EMA correction (Infinity).
+    """Second-order IIR filter sampler (Infinity).
 
-    The first step uses an Euler bootstrap.  Subsequent steps apply an
-    EMA-modulated correction with self-adaptive coefficients that ramp
-    from conservative (Euler-like) early in the trajectory to accurate
-    (AB2-like) late in the trajectory:
+    The first step uses an Euler bootstrap.  Subsequent steps apply a combined
+    first-order (velocity) and second-order (acceleration) EMA correction to
+    the ODE derivative:
 
         d_i       = (x_i - f(x_i, sigma_i)) / sigma_i
-        p         = (i - 1) / max(1, steps - 2)
-        alpha_i   = 0.3 + 0.5 * p        from 0.3 to 0.8
-        beta_i    = 0.3 + 0.2 * p        from 0.3 to 0.5
-        ema_i     = (1 - alpha_i) * ema_{i-1} + alpha_i * (d_i - d_{i-1})
-        x_{i+1}   = x_i + h_i * (d_i + beta_i * ema_i)
+        vel_i     = (1 - a1) * vel_{i-1} + a1 * (d_i - d_{i-1})
+        acc_i     = (1 - a2) * acc_{i-1} + a2 * (d_i - 2d_{i-1} + d_{i-2})
+        x_{i+1}   = x_i + h_i * (d_i + b1 * vel_i + b2 * acc_i)
 
-    Early steps use conservative coefficients for stability (noisy signal,
-    wide sigma gaps).  Late steps approach Adams-Bashforth 2 accuracy
-    (smooth signal, narrow sigma gaps).  When the EMA converges to zero,
-    the correction vanishes naturally — no mode switch, no threshold.
+    The first-order term tracks the rate of change of the derivative.
+    The second-order term tracks how that rate itself is changing,
+    predicting curvature without a second model evaluation.
+    Both EMAs decay to zero on convergence — no mode switch, no threshold.
     """
 
     def __init__(self):
@@ -224,9 +221,15 @@ class InfinitySampler:
         if sigmas.numel() < 2:
             raise ValueError("sigmas must have at least 2 elements")
 
+        alpha1 = 0.5
+        alpha2 = 0.3
+        beta1 = 0.5
+        beta2 = 0.3
         n_steps = sigmas.numel() - 1
         d_prev = None
-        ema = None
+        d_prev2 = None
+        vel = None
+        acc = None
 
         for i in range(n_steps):
             denoised = denoise_fn(x, sigmas[i].item())
@@ -237,16 +240,28 @@ class InfinitySampler:
 
             if i == 0:
                 x = x + d * (sigmas[i + 1] - sigmas[i])
-                ema = torch.zeros_like(d)
-            else:
-                progress = (i - 1) / max(1, n_steps - 2)
-                alpha = 0.3 + 0.5 * progress
-                beta = 0.3 + 0.2 * progress
+                d_prev = d
+                vel = torch.zeros_like(d)
+                acc = torch.zeros_like(d)
+                continue
 
+            if i == 1:
                 delta = d - d_prev
-                ema = (1.0 - alpha) * ema + alpha * delta
-                x = x + (d + beta * ema) * (sigmas[i + 1] - sigmas[i])
+                vel = (1.0 - alpha1) * vel + alpha1 * delta
+                correction = beta1 * vel
+                x = x + (d + correction) * (sigmas[i + 1] - sigmas[i])
+                d_prev2 = d_prev
+                d_prev = d
+                continue
 
+            delta = d - d_prev
+            delta_prev = d_prev - d_prev2
+            vel = (1.0 - alpha1) * vel + alpha1 * delta
+            acc = (1.0 - alpha2) * acc + alpha2 * (delta - delta_prev)
+            correction = beta1 * vel + beta2 * acc
+            x = x + (d + correction) * (sigmas[i + 1] - sigmas[i])
+
+            d_prev2 = d_prev
             d_prev = d
 
         return x
