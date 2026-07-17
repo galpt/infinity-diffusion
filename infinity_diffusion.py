@@ -53,16 +53,16 @@ def _to_d(x: torch.Tensor, sigma: torch.Tensor, denoised: torch.Tensor) -> torch
 
 
 class InfinityScheduler:
-    """Self-balancing sigma schedule with sine-perturbed timesteps.
+    """Sine-perturbed sigma schedule with adaptive strength.
 
     Two modes are supported:
 
     **Timestep-space mode** (recommended):
-    Applies a smooth sine perturbation to linear timesteps, then checks an
-    invariant: no log-sigma gap should exceed 2x the average gap.  Gaps that
-    violate this are split by inserting an intermediate timestep.  The
-    perturbation strength adapts to the step count automatically.
-    Provide ``sigma_fn``, ``timestep_start``, and ``timestep_end``::
+    Applies a smooth sine perturbation to linear timesteps, reducing the
+    first step's sigma gap (gentler start) and increasing the last step's
+    sigma gap (more edge cleanup).  The perturbation strength adapts to
+    the step count automatically.  Provide ``sigma_fn``, ``timestep_start``,
+    and ``timestep_end``::
 
         sched = InfinityScheduler(
             steps=20,
@@ -73,7 +73,7 @@ class InfinityScheduler:
 
     **Sigma-space mode** (fallback, no model access):
     Interpolates in sigma^(1/rho) space between sigma_min and sigma_max.
-    This mode skips the self-balancing step and may produce jagged edges::
+    This mode skips the sine perturbation and may produce jagged edges::
         sched = InfinityScheduler(steps=20, sigma_min=0.002, sigma_max=80.0)
 
     Parameters
@@ -144,34 +144,14 @@ class InfinityScheduler:
             ramp = torch.linspace(0.0, 1.0, self.steps)
             sigmas = (self._sigma_max ** (1.0 / rho) + ramp * (self._sigma_min ** (1.0 / rho) - self._sigma_max ** (1.0 / rho))) ** rho
         else:
-            # Sine-perturbed timestep distribution with self-balancing gap
-            # enforcement.  If any log-sigma gap exceeds 2x the average,
-            # an intermediate timestep is inserted.
+            # Sine-perturbed timestep distribution.  Redistributes step
+            # budget from the first step toward the last without creating
+            # extreme gaps.  All sigmas come from the model's training set.
             u = torch.linspace(0.0, 1.0, self.steps)
             strength = min(0.6, self.steps / 50.0)
             f = u - strength * (torch.sin(math.pi * u) / math.pi)
             timesteps = self._timestep_start + (self._timestep_end - self._timestep_start) * f
             sigmas = self.sigma_fn(timesteps)
-
-            max_ratio = 2.0
-            max_steps = self.steps * 3
-            while len(timesteps) <= max_steps:
-                log_s = sigmas.log()
-                gaps = log_s[:-1] - log_s[1:]
-                avg_gap = gaps.mean()
-                i = 0
-                inserted = False
-                while i < len(gaps):
-                    if gaps[i] > max_ratio * avg_gap:
-                        mid = (timesteps[i] + timesteps[i + 1]) * 0.5
-                        timesteps = torch.cat([timesteps[:i + 1], mid.unsqueeze(0), timesteps[i + 1:]])
-                        i += 2
-                        inserted = True
-                    else:
-                        i += 1
-                if not inserted:
-                    break
-                sigmas = self.sigma_fn(timesteps)
 
         return _append_zero(sigmas).float()
 
