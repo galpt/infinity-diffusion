@@ -14,26 +14,56 @@ step but overshoot when the denoising direction changes sharply, creating
 instability and artifacts.
 
 The Infinity sampler falls between these two.  It applies a correction that
-improves per-step accuracy over Euler by roughly 2x (measured by local
-truncation error constant) without the mode switches or overshoot of
-higher-order methods.
+improves per-step accuracy over Euler by roughly 2x without the instability
+or mode switches of higher-order methods.
 
-The update is straightforward:
+The update in plain terms:
 
-1. **EMA-corrected derivative.**  Tracks how the denoising direction changes
-   between steps and applies a smoothed correction.  The correction is damped
-   (beta < 1), so it is strictly more stable than Adams-Bashforth 2.  When
-   the trajectory converges, the EMA decays to zero and the correction
-   vanishes&mdash;no mode switch, no threshold.
+1. **It remembers which direction it was going.**  If the previous few steps
+   were consistently moving in one direction (refining a face, drawing a line),
+   it keeps pushing in that direction instead of resetting every step.  When
+   the image is done changing, the memory fades and it stops pushing.  This
+   smooths out the generation and reduces flickering or jittering between
+   steps.
 
-2. **Deterministic and reproducible.**  The sampler adds no stochastic noise.
-   Given the same seed, model, and conditioning, the output is always
-   identical.
+2. **Same output every time with the same settings.**  No random noise is
+   injected during sampling.  If you reuse the same seed, prompt, and
+   settings, you get the exact same image.
 
-3. **Normal scheduler's sigma distribution.**  The scheduler uses
-   linearly-spaced timesteps through the model's native sigma function,
-   identical to the normal scheduler.  Every sigma value is from the model's
-   training set&mdash;no jagged edges from unfamiliar noise levels.
+3. **Clean lines without jagged edges.**  The scheduler uses the same noise
+   levels the model was trained on, unlike custom schedules (Karras,
+   exponential) that can introduce unfamiliar noise levels where the model
+   makes mistakes.
+
+## When to use it
+
+**Anime and manga illustrations.**  The clean sigma distribution means thin
+black outlines stay sharp instead of turning jagged.  This is the most
+visible improvement over Karras or exponential schedulers.
+
+**Detailed scenes with many elements.**  The EMA correction keeps refining
+small details across multiple steps without overshooting, which matters when
+the image has faces, hands, textures, and background objects competing for
+the model's attention.
+
+**Batch generation for selection.**  Deterministic output means you can
+compare results across different prompts or models without wondering whether
+a difference came from random noise.  If two seeds give different results,
+the difference is real.
+
+**Any step count, one setting.**  Pick the Infinity sampler and Infinity
+scheduler, set your steps anywhere from 5 to 50, and generate.  No need to
+switch schedulers depending on step count or adjust rho or gamma parameters.
+
+When you might prefer something else:
+
+| If you want... | Use... |
+|---|---|
+| Maximum speed at very low steps (1-3) | Euler |
+| Maximum fine detail on simple subjects | DPM++ 2M |
+| More varied outputs from the same prompt | DPM++ 2S Ancestral |
+
+For everything else, Infinity is the safe default that does not need tuning.
 
 ## Using it
 
