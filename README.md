@@ -1,10 +1,12 @@
 # Infinity Diffusion
 
 A deterministic first-order ODE solver with EMA-modulated derivative
-correction for diffusion models.  It improves on Euler by tracking an
-exponential moving average of the denoising direction change and applying a
-smoothed, damped correction at each step.  The scheduler is a rebranded
-normal scheduler (linear timesteps through the model's native sigma function).
+correction and a non-linear timestep scheduler that shifts step budget
+toward the detail zone for cleaner edges.  The sampler improves on Euler
+by tracking an exponential moving average of the denoising direction change
+and applying a smoothed, damped correction at each step.  The scheduler
+uses a quadratic timestep perturbation that gives the final cleanup steps
+more sigma range than the linear normal scheduler.
 
 ## What makes it better
 
@@ -30,10 +32,12 @@ The update in plain terms:
    injected during sampling.  If you reuse the same seed, prompt, and
    settings, you get the exact same image.
 
-3. **Clean lines without jagged edges.**  The scheduler uses the same noise
-   levels the model was trained on, unlike custom schedules (Karras,
-   exponential) that can introduce unfamiliar noise levels where the model
-   makes mistakes.
+3. **More cleanup budget in late steps.**  Linear timesteps give the final
+   step a tiny sigma gap (0.01 at 20 steps).  The infinity scheduler
+   redistributes timestep density toward the low-sigma detail zone using
+   a quadratic perturbation, giving the last step up to 17% more sigma
+   range for edge cleanup.  All noise levels still come from the model's
+   training set — no jagged edges from unfamiliar sigmas.
 
 ## When to use it
 
@@ -51,9 +55,11 @@ compare results across different prompts or models without wondering whether
 a difference came from random noise.  If two seeds give different results,
 the difference is real.
 
-**Any step count, one setting.**  Pick the Infinity sampler and Infinity
-scheduler, set your steps anywhere from 5 to 50, and generate.  No need to
-switch schedulers depending on step count or adjust rho or gamma parameters.
+**Any step count, one setting.**  Pick Infinity for both sampler and
+scheduler, set your steps anywhere from 5 to 50, and generate.  The
+scheduler adapts its timestep distribution automatically — at low step
+counts it stays near-linear to avoid wasting budget, at high step counts
+it shifts density toward the detail zone.
 
 When you might prefer something else:
 

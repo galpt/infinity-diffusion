@@ -144,8 +144,12 @@ class InfinityScheduler:
             ramp = torch.linspace(0.0, 1.0, self.steps)
             sigmas = (self._sigma_max ** (1.0 / rho) + ramp * (self._sigma_min ** (1.0 / rho) - self._sigma_max ** (1.0 / rho))) ** rho
         else:
-            # Linear timesteps -> native sigma mapping (normal scheduler behavior).
-            timesteps = torch.linspace(self._timestep_start, self._timestep_end, self.steps)
+            # Non-linear timestep distribution that shifts density toward
+            # the detail zone without extreme gaps.
+            u = torch.linspace(0.0, 1.0, self.steps)
+            shaping = min(1.0, self.steps / 20.0)
+            f = u + shaping * (u * u - u) * 0.25
+            timesteps = self._timestep_start + (self._timestep_end - self._timestep_start) * f
             sigmas = self.sigma_fn(timesteps)
 
         return _append_zero(sigmas).float()
