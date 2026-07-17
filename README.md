@@ -12,6 +12,49 @@ the failure modes it tries to avoid, and why certain choices were made.
 
 ---
 
+> **TL;DR**
+>
+> Using the infinity sampler together with the infinity scheduler gives these
+> properties compared to other sampler/scheduler combinations:
+>
+> 1. **No step-count tuning.**  The scheduler adjusts rho automatically based
+>    on how many steps you request.  For 5 steps it spreads sigma broadly so
+>    every step captures something meaningful.  For 20+ steps it converges to
+>    the same distribution as Karras et al. (2022).  You never need to pick a
+>    separate scheduler to match your step budget.
+>
+> 2. **Lower overshoot risk than standard Adams-Bashforth 2.**  The EMA
+>    correction is damped by beta < 1, giving an extrapolation coefficient of
+>    0.25 versus 0.5 for AB2.  When the denoising trajectory changes direction
+>    sharply, a smaller extrapolation means less overshoot.  The infinity
+>    sampler is not immune to overshoot at very large step sizes (no explicit
+>    method is), but the damping reduces its severity compared to AB2.
+>
+> 3. **No mode switch on convergence.**  As the denoising trajectory converges
+>    the EMA naturally decays to zero and the correction vanishes.  The method
+>    becomes plain Euler without any threshold, if/else branch, or schedule
+>    parameter.  This avoids the stability discontinuity that occurs when a
+>    high-order sampler must artificially lower its order near zero sigma.
+>
+> 4. **Better per-step accuracy than Euler in curved regions.**  The correction
+>    term improves accuracy on curved trajectories by approximately 2x compared
+>    to Euler for the same step count (measured by the local truncation error
+>    constant: 0.25 vs 0.5 for Euler).  This means you need fewer steps than
+>    Euler for the same level of detail.
+>
+> 5. **Deterministic and reproducible.**  The sampler adds no stochastic noise
+>    (no s_churn, no ancestral noise).  Given the same seed, model, and
+>    conditioning, the output is identical every time.
+>
+> **Trade-off**: The per-step cost is one model evaluation, the same as Euler
+> or DPM++ 2M.  The improvement over Euler comes from needing fewer steps, not
+> from cheaper steps.  Methods like DPM++ 2M can sometimes achieve slightly
+> better accuracy per step than the infinity sampler on very smooth trajectories
+> because they are second-order, but they pay for that with increased
+> instability risk on sharp trajectory changes.
+
+---
+
 ## The problem
 
 Diffusion models generate images by starting from noise and gradually removing
