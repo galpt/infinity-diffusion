@@ -53,16 +53,16 @@ def _to_d(x: torch.Tensor, sigma: torch.Tensor, denoised: torch.Tensor) -> torch
 
 
 class InfinityScheduler:
-    """Self-adaptive sigma schedule with sine-perturbed timesteps.
+    """Self-balancing sigma schedule with sine-perturbed timesteps.
 
     Two modes are supported:
 
     **Timestep-space mode** (recommended):
-    Applies a smooth sine perturbation to linear timesteps, reducing the
-    first step's sigma gap (gentler start) and increasing the last step's
-    sigma gap (more edge cleanup).  The perturbation strength adapts to
-    the step count automatically.  Provide ``sigma_fn``, ``timestep_start``,
-    and ``timestep_end``::
+    Applies a smooth sine perturbation to linear timesteps, then checks an
+    invariant: no log-sigma gap should exceed 2x the average gap.  Gaps that
+    violate this are split by inserting an intermediate timestep.  The
+    perturbation strength adapts to the step count automatically.
+    Provide ``sigma_fn``, ``timestep_start``, and ``timestep_end``::
 
         sched = InfinityScheduler(
             steps=20,
@@ -73,8 +73,7 @@ class InfinityScheduler:
 
     **Sigma-space mode** (fallback, no model access):
     Interpolates in sigma^(1/rho) space between sigma_min and sigma_max.
-    This mode is a rough approximation that may produce jagged edges::
-
+    This mode skips the self-balancing step and may produce jagged edges::
         sched = InfinityScheduler(steps=20, sigma_min=0.002, sigma_max=80.0)
 
     Parameters
@@ -145,14 +144,34 @@ class InfinityScheduler:
             ramp = torch.linspace(0.0, 1.0, self.steps)
             sigmas = (self._sigma_max ** (1.0 / rho) + ramp * (self._sigma_min ** (1.0 / rho) - self._sigma_max ** (1.0 / rho))) ** rho
         else:
-            # Sine-perturbed timestep distribution.  Redistributes step
-            # budget from the first step toward the last without creating
-            # extreme gaps.  All sigmas come from the model's training set.
+            # Sine-perturbed timestep distribution with self-balancing gap
+            # enforcement.  If any log-sigma gap exceeds 2x the average,
+            # an intermediate timestep is inserted.
             u = torch.linspace(0.0, 1.0, self.steps)
             strength = min(0.6, self.steps / 50.0)
             f = u - strength * (torch.sin(math.pi * u) / math.pi)
             timesteps = self._timestep_start + (self._timestep_end - self._timestep_start) * f
             sigmas = self.sigma_fn(timesteps)
+
+            max_ratio = 2.0
+            max_steps = self.steps * 3
+            while len(timesteps) <= max_steps:
+                log_s = sigmas.log()
+                gaps = log_s[:-1] - log_s[1:]
+                avg_gap = gaps.mean()
+                i = 0
+                inserted = False
+                while i < len(gaps):
+                    if gaps[i] > max_ratio * avg_gap:
+                        mid = (timesteps[i] + timesteps[i + 1]) * 0.5
+                        timesteps = torch.cat([timesteps[:i + 1], mid.unsqueeze(0), timesteps[i + 1:]])
+                        i += 2
+                        inserted = True
+                    else:
+                        i += 1
+                if not inserted:
+                    break
+                sigmas = self.sigma_fn(timesteps)
 
         return _append_zero(sigmas).float()
 
@@ -163,21 +182,25 @@ class InfinityScheduler:
 
 
 class InfinitySampler:
-    """Second-order IIR filter sampler (Infinity).
+    """Self-balancing invariant-checking sampler (Infinity).
 
     The first step uses an Euler bootstrap.  Subsequent steps apply a combined
     first-order (velocity) and second-order (acceleration) EMA correction to
-    the ODE derivative:
+    the ODE derivative.
+
+    Before applying the correction, three invariants are checked:
+      1.  Correction magnitude must not exceed 50% of the derivative.
+      2.  If the derivative reversed direction, the correction is halved.
+      3.  If both invariants are violated, the correction is zeroed
+          (pure Euler step).
+
+    Most steps pass all invariants — the checking is nearly free.
+    When invariants hold, the full second-order correction is applied.
 
         d_i       = (x_i - f(x_i, sigma_i)) / sigma_i
         vel_i     = (1 - a1) * vel_{i-1} + a1 * (d_i - d_{i-1})
         acc_i     = (1 - a2) * acc_{i-1} + a2 * (d_i - 2d_{i-1} + d_{i-2})
         x_{i+1}   = x_i + h_i * (d_i + b1 * vel_i + b2 * acc_i)
-
-    The first-order term tracks the rate of change of the derivative.
-    The second-order term tracks how that rate itself is changing,
-    predicting curvature without a second model evaluation.
-    Both EMAs decay to zero on convergence — no mode switch, no threshold.
     """
 
     def __init__(self):
@@ -245,20 +268,37 @@ class InfinitySampler:
                 acc = torch.zeros_like(d)
                 continue
 
+            # Compute correction
             if i == 1:
                 delta = d - d_prev
                 vel = (1.0 - alpha1) * vel + alpha1 * delta
-                correction = beta1 * vel
-                x = x + (d + correction) * (sigmas[i + 1] - sigmas[i])
-                d_prev2 = d_prev
-                d_prev = d
-                continue
+                raw_correction = beta1 * vel
+            else:
+                delta = d - d_prev
+                delta_prev = d_prev - d_prev2
+                vel = (1.0 - alpha1) * vel + alpha1 * delta
+                acc = (1.0 - alpha2) * acc + alpha2 * (delta - delta_prev)
+                raw_correction = beta1 * vel + beta2 * acc
 
-            delta = d - d_prev
-            delta_prev = d_prev - d_prev2
-            vel = (1.0 - alpha1) * vel + alpha1 * delta
-            acc = (1.0 - alpha2) * acc + alpha2 * (delta - delta_prev)
-            correction = beta1 * vel + beta2 * acc
+            # Invariant: correction must not exceed 50% of derivative
+            d_mag = d.abs().mean() + 1e-8
+            c_mag = raw_correction.abs().mean()
+            clamped = c_mag > 0.5 * d_mag
+            if clamped:
+                raw_correction = raw_correction * (0.5 * d_mag / c_mag)
+
+            # Invariant: derivative direction should not reverse sharply
+            cos_sim = (d * d_prev).sum() / (d.norm() * d_prev.norm() + 1e-8)
+            reversed_dir = cos_sim < 0.0
+
+            # Fallback: Euler step if both invariants fail
+            if clamped and reversed_dir:
+                correction = torch.zeros_like(raw_correction)
+            elif reversed_dir:
+                correction = raw_correction * 0.5
+            else:
+                correction = raw_correction
+
             x = x + (d + correction) * (sigmas[i + 1] - sigmas[i])
 
             d_prev2 = d_prev
