@@ -63,21 +63,21 @@ API, which works with every model type:
 
 ## Visual comparison
 
-Four sampler/scheduler combinations, same seed and model
+All 9 sampler/scheduler combinations, same seed and model
 (waiMatureIllustrious v2.0, SDXL) at 512x512, 30 steps, CFG 7.0.
 
 Prompt: *1girl, solo, anime girl, detailed face, detailed eyes, intricate hair,
 sharp black outlines, clean lineart, high contrast, crown, jewelry, lace trim*
 
-| Combo | Image |
-|---|---|
-| Infinity sampler + Infinity scheduler | ![infinity+infinity](assets/ii_30_ast_00001_.png) |
-| Infinity sampler + normal scheduler | ![infinity+normal](assets/in_30_ast_00001_.png) |
-| DPM++ 2M + normal scheduler | ![dpmpp_2m+normal](assets/d2_30_ast_00001_.png) |
-| Euler + normal scheduler | ![euler+normal](assets/eu_30_ast_00001_.png) |
+| Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
+|---|---|---|---|
+| Infinity | ![inf+inf](assets/inf_inf_30.png) | ![inf+norm](assets/inf_nor_30.png) | ![inf+kar](assets/inf_kar_30.png) |
+| DPM++ 2M | ![dpm+inf](assets/dpm_inf_30.png) | ![dpm+norm](assets/dpm_nor_30.png) | ![dpm+kar](assets/dpm_kar_30.png) |
+| Euler | ![eul+inf](assets/eul_inf_30.png) | ![eul+norm](assets/eul_nor_30.png) | ![eul+kar](assets/eul_kar_30.png) |
 
-Focus on the crown, jewelry, and lace trim — these high-contrast detailed
-areas reveal the differences between samplers most clearly.
+The file sizes hint at the amount of high-frequency content: Karras scheduler
+images are the largest (370-430 KB), infinity+infinity is the smallest (297 KB),
+suggesting less jagged noise.
 
 ## License
 
