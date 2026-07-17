@@ -3,9 +3,10 @@
 A deterministic first-order ODE solver with EMA-corrected derivative for
 diffusion models.  The sampler tracks the denoising direction change between
 steps and applies a smoothed, damped correction, improving on Euler without
-the instability of higher-order methods.  The scheduler produces sigma values
-identical to the normal scheduler but works with any model type, not just
-discrete-timestep models.
+the instability of higher-order methods.  The scheduler produces the same
+sigma values as the normal scheduler — it is a convenience alias so that
+picking "infinity" for both dropdowns always gives a correctly paired
+sampler and scheduler.
 
 ## When to use it
 
@@ -16,16 +17,16 @@ subjects competing for attention.
 **Batch generation.**  Deterministic output means you can compare prompts
 or models without noise injection confounding the results.
 
-**Any model type.**  The Infinity scheduler works with every diffusion
-model format.  If you switch between SDXL, FLUX, and video models, you
-only need to remember one scheduler name.
+**One setting for everything.**  Pick Infinity for both the sampler and
+scheduler dropdowns, set your step count, and generate.  No need to match
+scheduler to sampler or adjust additional parameters.
 
 When you might prefer something else:
 
 | If you want... | Use... |
 |---|---|
 | Maximum per-step accuracy | DPM++ 2M (may overshoot) |
-| Deterministic, no risk | Infinity sampler + normal scheduler |
+| Deterministic, no risk | Infinity sampler |
 | Minimum resource usage | Euler |
 
 ## Sampler
@@ -39,7 +40,7 @@ their math breaks down.
 The Infinity sampler improves on Euler by tracking an exponential moving
 average of the derivative change between steps.  The correction is damped
 (beta < 1), so it cannot overshoot like DPM++ 2M.  When the trajectory
-converges, the EMA decays to zero and the correction vanishes naturally --
+converges, the EMA decays to zero and the correction vanishes naturally &mdash;
 no mode switch, no threshold.
 
 The sampler is deterministic: same seed, model, and conditioning always
@@ -47,19 +48,10 @@ produces the same output.
 
 ## Scheduler
 
-The Infinity scheduler produces the same sigma distribution as the normal
-scheduler (linear timesteps through the model's native sigma function).
-Its difference is compatibility: the normal scheduler in ComfyUI works
-only with discrete-timestep models (ModelSamplingDiscrete, used by SD1.5
-and SDXL).  The Infinity scheduler uses the model's timestep() and sigma()
-API, which works with every model type:
-
-| Model type | Works with normal? | Works with Infinity? |
-|---|---|---|
-| ModelSamplingDiscrete (SD1.5, SDXL) | Yes | Yes |
-| ModelSamplingContinuousEDM (FLUX, SD3) | No | Yes |
-| ModelSamplingContinuousV (video) | No | Yes |
-| ModelSamplingDiscreteFlow (flow) | No | Yes |
+The Infinity scheduler produces the same sigma values as the normal scheduler
+(linear timesteps through the model's native sigma function).  It is a
+convenience alias so that picking "infinity" for both dropdowns always gives
+a correctly paired sampler and scheduler.
 
 ## Visual comparison
 
