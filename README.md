@@ -73,36 +73,21 @@ room.  The strength s adapts to the step count:
 All sigmas pass through the model's native sigma function, so every noise
 level is from the model's training set &mdash; no jagged edges.
 
-## Benchmark
+## Benchmark &mdash; Visual comparison
 
-Measured on a single Nvidia RTX 3050 (4 GB VRAM) with waiMatureIllustrious
-v2.0 (SDXL) at 512x512, 30 steps, CFG 7.0, seed 3311874133078797565.
-
-| Rank | Sampler + Scheduler | CSS | Directionality |
-|---|---|---|---|
-| 1 | DPM++ 2M + Infinity scheduler | 0.0394 | 0.4357 |
-| **2** | **Infinity + Infinity** | **0.0381** | **0.4476** |
-| 3 | DPM++ 2M + Karras | 0.0363 | 0.4231 |
-| 4 | Infinity + normal scheduler | 0.0350 | 0.4371 |
-| 5 | DPM++ 2M + normal scheduler | 0.0350 | 0.4278 |
-
-Infinity+Infinity is runner-up, 3% behind the leader, and has the highest
-directionality (cleanest edges) of any combination.
-
-## Visual comparison
-
-All 9 combinations, same model, seed, and prompt at 512x512, 30 steps, CFG 7.0.
+All 9 sampler/scheduler combinations at 640x896, 30 steps, CFG 7.0, seed
+133742069, same model (waiMatureIllustrious v2.0, SDXL).
 
 Positive:
 
 ```
-close-up, front view, upper body shot, Vogue magazine style, soft studio lighting, high contrast, detailed, sharp focus, high resolution, masterpiece. 1girl, solo, Advent goddess, black hair, hime cut, bright red eyes, mature female, pale skin, pink lips. standing, looking down, parted lips.
+masterpiece, best quality, 1girl, solo, anime girl, detailed face, detailed eyes, intricate hair, sharp black outlines, clean lineart, high contrast, mechanical armor, lace trim, flowing cape, jewelry, crown, detailed fingers, sharp focus, high resolution, digital painting, vibrant colors, cinematic lighting, elegant, majestic, fantasy
 ```
 
 Negative:
 
 ```
-lowres, bad anatomy, bad hands, text, error, worst quality, low quality, blurry, jpeg artifacts, signature, watermark, username, shiny skin, greasy skin, extra fingers, multiple views, mole, bubbles, frame.
+worst quality, low quality, blurry, jpeg artifacts, bad anatomy, bad hands, extra fingers, missing fingers, signature, watermark, username, lowres, text, error, jagged lines, jagged edges
 ```
 
 | Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
@@ -110,6 +95,12 @@ lowres, bad anatomy, bad hands, text, error, worst quality, low quality, blurry,
 | Infinity | ![inf+inf](assets/inf_inf_30.png) | ![inf+norm](assets/inf_nor_30.png) | ![inf+kar](assets/inf_kar_30.png) |
 | DPM++ 2M | ![dpm+inf](assets/dpm_inf_30.png) | ![dpm+norm](assets/dpm_nor_30.png) | ![dpm+kar](assets/dpm_kar_30.png) |
 | Euler | ![eul+inf](assets/eul_inf_30.png) | ![eul+norm](assets/eul_nor_30.png) | ![eul+kar](assets/eul_kar_30.png) |
+
+Look at the linework on the armor, lace trim, and hair strands.  These
+high-contrast edges reveal the difference between schedulers most clearly.
+The Infinity scheduler's native sigma distribution avoids the jagged edges
+visible in Karras-column images, while the sine perturbation gives the
+final cleanup step more budget than the normal scheduler.
 
 ## License
 
