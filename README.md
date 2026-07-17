@@ -75,19 +75,25 @@ level is from the model's training set &mdash; no jagged edges.
 
 ## Benchmark &mdash; Visual comparison
 
-All 9 sampler/scheduler combinations at 640x896, 30 steps, CFG 7.0, seed
-133742069, same model (waiMatureIllustrious v2.0, SDXL).
+All 9 sampler/scheduler combinations at 832x1216, 30 steps, CFG 7.0,
+seed 377020409264109, same model (waiMatureIllustrious v2.0, SDXL).
 
 Positive:
 
 ```
+close up, front view, upper body shot, professional shot, Vogue magazine style, soft studio lighting, (cinematic depth of field:1.2), studio quality, digitally enhanced, high contrast, crisp sharp black outlines, clean sharp lineart, intricate lace trim, thin geometric filigree patterns, intimate, detailed, steady gaze, rendered in sepia tones, evoking rembrandt, timeless, expressive, highly detailed, sharp focus, high resolution, masterpiece, high score, great score, absurdres, smooth film grain, cinematic light particles.
+
+1girl, solo, anime girl, Advent goddess, black hair, dark red eyes, hime cut, long hair, detailed eyes, mature female, sexy fox eyes, pale skin, pink lips, beautiful feminine face.
+
 masterpiece, best quality, 1girl, solo, anime girl, detailed face, detailed eyes, intricate hair, sharp black outlines, clean lineart, high contrast, mechanical armor, lace trim, flowing cape, jewelry, crown, detailed fingers, sharp focus, high resolution, digital painting, vibrant colors, cinematic lighting, elegant, majestic, fantasy
+
+she has a curvy and plump body.
 ```
 
 Negative:
 
 ```
-worst quality, low quality, blurry, jpeg artifacts, bad anatomy, bad hands, extra fingers, missing fingers, signature, watermark, username, lowres, text, error, jagged lines, jagged edges
+lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame, jagged edges, aliased
 ```
 
 | Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
