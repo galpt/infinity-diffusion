@@ -1,11 +1,12 @@
 # infinity-diffusion
 
-A first-order linear multi-step sampler with EMA correction and a self-adaptive
-sigma scheduler for diffusion models.  The sampler improves on Euler by tracking
-an exponential moving average of the ODE derivative change and applying a
-smoothed correction at each step.  The scheduler distributes steps in
-sigma^(1/rho) space, adapting the exponent automatically so the schedule works
-at any step count without tuning.
+A first-order linear multi-step sampler with EMA correction and a
+model-agnostic sigma scheduler for diffusion models.  The sampler improves on
+Euler by tracking an exponential moving average of the ODE derivative change
+and applying a smoothed correction at each step.  The scheduler maps
+linearly-spaced timesteps through the model's native sigma() function,
+producing the same noise-level distribution as the normal scheduler but
+without hardcoding model-specific indices.
 
 This is primarily a place to read about the design and trade-offs.  The math,
 the failure modes it tries to avoid, and why certain choices were made.
@@ -16,11 +17,12 @@ the failure modes it tries to avoid, and why certain choices were made.
 > **TL;DR** — Using the infinity sampler together with the infinity scheduler
 > gives these properties compared to other sampler/scheduler combinations:
 >
-> 1. **No step-count tuning, clean lines.**  The scheduler distributes steps
->    in the model's native timestep space and maps through its sigma() function,
->    so every sigma value comes from the model's training distribution.  This
->    avoids the jagged edges that sigma-space schedules (Karras, exponential)
->    produce.  Rho self-adapts to the step count automatically.
+> 1. **Same clean lines as the normal scheduler, no tuning.**  The scheduler
+>    maps linearly-spaced timesteps through the model's native sigma() function,
+>    producing sigma values identical to the normal scheduler.  Because the
+>    model only sees noise levels from its training distribution, thin lines
+>    and edges stay clean.  The distribution is always optimal at any step
+>    count — no Karras rho, no exponential gamma, no parameters to adjust.
 >
 > 2. **Lower overshoot risk than standard Adams-Bashforth 2.**  The EMA
 >    correction is damped by beta < 1, giving an extrapolation coefficient of
@@ -85,18 +87,13 @@ are determined in the mid-noise range: early steps block in the broad
 composition; late steps refine edges and texture.  If you waste steps at very
 high or very low noise, you need more total steps for the same quality.
 
-The infinity scheduler distributes timesteps in the model's native timestep
-space, then maps through the model's sigma() function.  Every produced sigma
-is an interpolation of the model's native training sigmas.
-
-The normal scheduler (available in ComfyUI, Automatic1111, and other tools)
-uses linearly-spaced timesteps and then maps to sigmas through the model's
-training schedule.  The infinity scheduler does the same but replaces the
-linear timestep distribution with a power ramp:
+The infinity scheduler uses linearly-spaced timesteps mapped through the
+model's native sigma() function.  This is the same approach as the normal
+scheduler, but the infinity scheduler discovers the timestep range through the
+model's API rather than hardcoding indices.
 
 ```
-ramp_i     = (i / (n-1))^rho
-t_i        = t_max + (t_min - t_max) * ramp_i
+t_i        = t_max + (t_min - t_max) * i / (n - 1)
 sigma_i    = sigma(t_i)
 sigma_n    = 0
 ```
@@ -105,28 +102,22 @@ where t_max = timestep(sigma_max) and t_min = timestep(sigma_min) are the
 model's native timestep boundaries, and sigma(t) is the model's native
 timestep-to-sigma function.
 
-This approach avoids the jagged-edge artifacts that can occur when custom
-sigma-space schedules (Karras, exponential) ask the model to denoise at noise
-levels outside its training distribution.  Because the sigmas always come from
-the model's native sigma function, the model sees only noise levels it was
-trained on.  The only difference from the normal scheduler is which timesteps
-are selected -- the sigma values themselves follow the same training-distribution
-shape.
+This is in contrast to sigma-space schedules (Karras, exponential) that compute
+sigma values directly without going through the model's timestep mapping.
+Those schedules may produce noise levels the model was never trained on,
+causing less accurate denoising predictions at low sigma where fine details
+and edges are determined.  The effect is visible as jagged or aliased lines on
+high-contrast features.
 
-The exponent rho adapts to the step count automatically:
+The linear timestep approach is optimal because it gives each step a balanced
+share of the total noise budget.  Early steps receive moderate sigma gaps for
+structure formation.  Late steps receive moderate sigma gaps for edge cleanup.
+This balanced distribution is what the model was trained to expect, and it
+produces clean lines regardless of step count.
 
-```
-steps = 5   -> rho ~ 1.0  (near-linear timesteps, normal-like)
-steps = 10  -> rho ~ 0.9  (slight detail focus)
-steps = 15  -> rho ~ 0.7  (detail focus)
-steps = 20  -> rho ~ 0.7  (detail focus)
-steps = 50  -> rho ~ 0.7  (detail focus)
-```
-
-At rho = 1 the timesteps are linear, identical to the normal scheduler.  At
-rho < 1 the power ramp concentrates more timesteps at low noise levels where
-perceptual detail is determined, shifting resolution toward the detail range
-while keeping every sigma inside the model's training distribution.
+The infinity scheduler is model-agnostic: it works correctly with any model
+type (ModelSamplingDiscrete for SD1.5/SDXL, ContinuousEDM, Flow matching,
+etc.) by reading the sigma range directly from the model object.
 
 ---
 
@@ -223,30 +214,22 @@ to ramp up from 0 over the first few steps.
 
 ### Sigma-space schedules cause jagged edges
 
-Schedulers that compute sigmas directly in sigma space (Karras, exponential,
-or the earlier sigma^(1/rho) formulation of the infinity scheduler) produce
-sigma values that may not align with the model's training distribution.
-When the model is asked to denoise at noise levels it was never or rarely
-trained on, its predictions become slightly less accurate.  At low noise levels
-where fine details and edges are determined, this inaccuracy manifests as
-jagged or aliased lines.
+Schedulers that compute sigmas directly in sigma space (Karras, exponential)
+produce noise levels that may not align with the model's training distribution.
+When the model is asked to denoise at an unfamiliar sigma, its prediction is
+slightly less accurate.  At low sigma where edges and fine details are
+determined, these small errors accumulate into visible jagged or aliased lines.
 
-The effect is most visible on thin, high-contrast features (black outlines
-on anime characters, text, sharp edges).  The model's denoising prediction
-at an unfamiliar noise level produces slightly off pixels, and these errors
-accumulate into visible jaggies.
+The effect is most visible on thin, high-contrast features (black outlines in
+anime, text, hard edges).  The model effectively "guesses" at an unfamiliar
+noise level, and the guess is slightly off for the pixels that form a clean
+line.
 
-The current infinity scheduler avoids this by distributing timesteps in the
-model's native timestep space and mapping through the model's sigma()
-function.  Every produced sigma is a value the model was trained on.  The
-timestep distribution itself follows a power ramp (the infinity twist), but
-the sigma values always come from the training distribution.
-
-If you use the infinity scheduler in sigma-space mode (standalone, without
-a sigma_fn), the same jagged-edge risk applies, though the sigma^(1/rho)
-distribution is less affected than the original linear-in-sigma formula
-because it concentrates more steps in the detail range where the model's
-predictions are better-behaved.
+The infinity scheduler avoids this by using linearly-spaced timesteps through
+the model's native sigma() function — the same sigma distribution the model
+was trained on.  If you use the infinity scheduler in sigma-space mode
+(standalone, no sigma_fn), the same jagged-edge risk applies: use
+timestep-space mode when you have access to the model's sigma function.
 
 ### Zero terminal sigma causes division issues
 
@@ -287,10 +270,10 @@ and PyTorch.  No other libraries are required.
 import torch
 from infinity_diffusion import InfinitySampler, InfinityScheduler
 
-# Sigma-space mode (no access to model's native sigma function):
+# Standalone (sigma-space mode, no model access needed):
 sigmas = InfinityScheduler(steps=20, sigma_min=0.002, sigma_max=80.0).sigmas
 
-# Timestep-space mode (recommended when sigma_fn is available):
+# With a diffusion framework (timestep-space mode, recommended):
 # sigmas = InfinityScheduler(
 #     steps=20,
 #     sigma_fn=model_sampling.sigma,

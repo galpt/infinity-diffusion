@@ -55,27 +55,27 @@ def _to_d(x: torch.Tensor, sigma: torch.Tensor, denoised: torch.Tensor) -> torch
 class InfinityScheduler:
     """Self-adaptive sigma schedule.
 
-    Two distribution modes are supported:
+    Two modes are supported:
 
-    **Timestep-space mode** (recommended for diffusion models):
-    Distributes timesteps in the model's native timestep space using a power
-    ramp, then maps through the model's sigma() function.  Every produced
-    sigma is an interpolation of the model's native training sigmas.
-    Provide a ``sigma_fn`` callable to use this mode::
+    **Timestep-space mode** (recommended):
+    Linearly-spaced timesteps mapped through the model's native sigma()
+    function.  Identical to the normal scheduler in behavior.  Every sigma
+    comes from the training distribution, guaranteeing clean lines.
+    Provide ``sigma_fn``, ``timestep_start``, and ``timestep_end``::
 
-        def sigma_fn(timesteps):
-            return model_sampling.sigma(timesteps)
+        sched = InfinityScheduler(
+            steps=20,
+            sigma_fn=model_sampling.sigma,
+            timestep_start=999,
+            timestep_end=0,
+        )
 
-        sched = InfinityScheduler(steps=20, sigma_fn=sigma_fn)
-
-    **Sigma-space mode** (fallback):
+    **Sigma-space mode** (fallback, no model access):
     Interpolates in sigma^(1/rho) space between sigma_min and sigma_max.
-    Provide ``sigma_min`` and ``sigma_max`` as floats to use this mode.
+    This mode is a reasonable approximation but may produce jagged-edge
+    artifacts on thin lines and high-contrast edges::
 
         sched = InfinityScheduler(steps=20, sigma_min=0.002, sigma_max=80.0)
-
-    The exponent rho adapts to the step count automatically so the schedule
-    works at any resolution without parameter tuning.
 
     Parameters
     ----------
@@ -87,8 +87,13 @@ class InfinityScheduler:
         Maximum noise level.  Required in sigma-space mode.
     sigma_fn : callable, optional
         ``sigma_fn(timesteps: Tensor) -> Tensor`` for timestep-space mode.
+    timestep_start : float, optional
+        Highest timestep (maps to sigma_max).  Required with sigma_fn.
+    timestep_end : float, optional
+        Lowest timestep (maps to sigma_min).  Required with sigma_fn.
     rho : float or None, optional
-        Power exponent for the distribution ramp.  None means self-adaptive.
+        Power exponent for sigma-space mode.  None means self-adaptive
+        (default 7.0 for sigma-space, ignored in timestep-space mode).
     """
 
     def __init__(
@@ -105,11 +110,8 @@ class InfinityScheduler:
             raise ValueError(f"steps must be >= 1, got {steps}")
 
         self.steps = steps
-        self.rho = rho
 
         if sigma_fn is not None:
-            # Timestep-space mode: use sigma_fn(timesteps) where timesteps
-            # go from timestep_start down to timestep_end.
             if timestep_start is None or timestep_end is None:
                 raise ValueError("timestep_start and timestep_end required when sigma_fn is given")
             self.sigma_fn = sigma_fn
@@ -118,8 +120,8 @@ class InfinityScheduler:
             self._sigma_space = False
             self._sigma_min = None
             self._sigma_max = None
+            self.rho = None  # unused in timestep-space mode
         else:
-            # Sigma-space mode: interpolate directly between sigma_min and sigma_max.
             if sigma_min is None or sigma_max is None:
                 raise ValueError("sigma_min and sigma_max required in sigma-space mode")
             if sigma_min <= 0.0:
@@ -132,30 +134,21 @@ class InfinityScheduler:
             self.sigma_fn = None
             self._timestep_start = None
             self._timestep_end = None
+            self.rho = rho
 
     @property
     def sigmas(self) -> torch.Tensor:
         """Return the sigma schedule as a 1-D float32 tensor of length steps + 1."""
-        rho = self.rho
-        if rho is None:
-            rho = self._default_rho()
-
-        # ramp in [0, 1]; rho < 1 concentrates near the end (detail focus).
-        ramp = torch.linspace(0.0, 1.0, self.steps) ** rho
-
         if self._sigma_space:
+            rho = self.rho if self.rho is not None else 7.0
+            ramp = torch.linspace(0.0, 1.0, self.steps)
             sigmas = (self._sigma_max ** (1.0 / rho) + ramp * (self._sigma_min ** (1.0 / rho) - self._sigma_max ** (1.0 / rho))) ** rho
         else:
-            timesteps = self._timestep_start + (self._timestep_end - self._timestep_start) * ramp
+            # Linear timesteps -> native sigma mapping (normal scheduler behavior).
+            timesteps = torch.linspace(self._timestep_start, self._timestep_end, self.steps)
             sigmas = self.sigma_fn(timesteps)
 
         return _append_zero(sigmas).float()
-
-    def _default_rho(self) -> float:
-        if self._sigma_space:
-            return 2.0 + 5.0 * min(1.0, max(0.0, (self.steps - 5.0) / 15.0))
-        else:
-            return 0.7 + 0.3 * max(0.0, min(1.0, (15.0 - self.steps) / 10.0))
 
 
 # ---------------------------------------------------------------------------

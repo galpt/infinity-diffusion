@@ -78,17 +78,13 @@ def sample_infinity(
     return x
 
 
-def infinity_scheduler(model_sampling, steps: int, rho: float | None = None) -> torch.Tensor:
+def infinity_scheduler(model_sampling, steps: int) -> torch.Tensor:
     """ComfyUI scheduler handler for InfinityScheduler.
 
-    Distributes timesteps in the model's native timestep space, then maps
-    through the model's sigma() function.  Every produced sigma value is
-    an interpolation of the model's native training sigmas.  This avoids
-    the jagged-edge artifacts that occur when sigma-space schedules ask
-    the model to denoise at noise levels outside its training distribution.
-
-    When rho is None (the default) the exponent self-adapts to the step
-    count.
+    Distributes timesteps linearly in the model's native timestep space,
+    then maps through the model's sigma() function.  Every produced sigma
+    value is an interpolation of the model's native training sigmas, which
+    avoids the jagged-edge artifacts that occur with sigma-space schedules.
 
     Parameters
     ----------
@@ -97,8 +93,6 @@ def infinity_scheduler(model_sampling, steps: int, rho: float | None = None) -> 
         ``timestep``, and ``sigma`` attributes.
     steps : int
         Number of sampling steps.
-    rho : float or None, optional
-        Power exponent for timestep distribution.  None means self-adaptive.
 
     Returns
     -------
@@ -113,6 +107,5 @@ def infinity_scheduler(model_sampling, steps: int, rho: float | None = None) -> 
         sigma_fn=model_sampling.sigma,
         timestep_start=start,
         timestep_end=end,
-        rho=rho,
     )
     return scheduler.sigmas
