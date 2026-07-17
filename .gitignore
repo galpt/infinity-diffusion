@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+*.venv/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# PyTorch / CUDA
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Test artifacts
+.pytest_cache/
+coverage/
+htmlcov/
+*.log
