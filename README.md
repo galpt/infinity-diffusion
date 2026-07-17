@@ -76,7 +76,8 @@ level is from the model's training set &mdash; no jagged edges.
 ## Benchmark
 
 Measured on waiMatureIllustrious v2.0 (SDXL) at 512x512, 30 steps, CFG 7.0,
-seed 9500:
+seed 9500. Negative prompt: *worst quality, low quality, blurry, jpeg
+artifacts, bad anatomy*.
 
 | Sampler + Scheduler | CSS (higher = cleaner) |
 |---|---|
@@ -96,6 +97,8 @@ CFG 7.0.
 
 Prompt: *1girl, solo, anime girl, detailed face, detailed eyes, intricate hair,
 sharp black outlines, clean lineart, high contrast, crown, jewelry, lace trim*
+
+Negative prompt: *worst quality, low quality, blurry, jpeg artifacts, bad anatomy*
 
 | Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
 |---|---|---|---|
