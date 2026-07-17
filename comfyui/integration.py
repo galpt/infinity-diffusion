@@ -38,15 +38,13 @@ def sample_infinity(
     extra_args: dict | None = None,
     callback=None,
     disable: bool = False,
-    alpha: float = 0.5,
-    beta: float = 0.5,
 ) -> torch.Tensor:
     """ComfyUI k_diffusion sampler function for InfinitySampler.
 
     Parameters match the standard ComfyUI sampler signature:
         ``model(x, sigma * s_in, **extra_args)``
     """
-    sampler = InfinitySampler(alpha=alpha, beta=beta)
+    sampler = InfinitySampler()
     s_in = x.new_ones([x.shape[0]])
     extra_args = {} if extra_args is None else extra_args
 

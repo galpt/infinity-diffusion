@@ -163,33 +163,28 @@ class InfinityScheduler:
 
 
 class InfinitySampler:
-    """Self-stabilizing sampler with EMA correction (Infinity).
+    """Self-adaptive sampler with EMA correction (Infinity).
 
     The first step uses an Euler bootstrap.  Subsequent steps apply an
-    EMA-modulated correction to the ODE derivative:
+    EMA-modulated correction with self-adaptive coefficients that ramp
+    from conservative (Euler-like) early in the trajectory to accurate
+    (AB2-like) late in the trajectory:
 
         d_i       = (x_i - f(x_i, sigma_i)) / sigma_i
-        ema_i     = (1 - alpha) * ema_{i-1} + alpha * (d_i - d_{i-1})
-        x_{i+1}   = x_i + h_i * (d_i + beta * ema_i)
+        p         = (i - 1) / max(1, steps - 2)
+        alpha_i   = 0.3 + 0.5 * p        from 0.3 to 0.8
+        beta_i    = 0.3 + 0.2 * p        from 0.3 to 0.5
+        ema_i     = (1 - alpha_i) * ema_{i-1} + alpha_i * (d_i - d_{i-1})
+        x_{i+1}   = x_i + h_i * (d_i + beta_i * ema_i)
 
-    When the EMA decays to zero (converged), the correction vanishes and
-    the method reverts to plain Euler — no mode switch, no threshold.
-
-    Parameters
-    ----------
-    alpha : float, optional
-        EMA coefficient in (0, 1].  Default 0.5.
-    beta : float, optional
-        Correction strength, must be < 1.  Default 0.5.
+    Early steps use conservative coefficients for stability (noisy signal,
+    wide sigma gaps).  Late steps approach Adams-Bashforth 2 accuracy
+    (smooth signal, narrow sigma gaps).  When the EMA converges to zero,
+    the correction vanishes naturally — no mode switch, no threshold.
     """
 
-    def __init__(self, alpha: float = 0.5, beta: float = 0.5):
-        if not 0.0 < alpha <= 1.0:
-            raise ValueError(f"alpha must be in (0, 1], got {alpha}")
-        if not 0.0 <= beta < 1.0:
-            raise ValueError(f"beta must be in [0, 1), got {beta}")
-        self.alpha = alpha
-        self.beta = beta
+    def __init__(self):
+        pass
 
     @torch.no_grad()
     def sample(
@@ -244,9 +239,13 @@ class InfinitySampler:
                 x = x + d * (sigmas[i + 1] - sigmas[i])
                 ema = torch.zeros_like(d)
             else:
+                progress = (i - 1) / max(1, n_steps - 2)
+                alpha = 0.3 + 0.5 * progress
+                beta = 0.3 + 0.2 * progress
+
                 delta = d - d_prev
-                ema = (1.0 - self.alpha) * ema + self.alpha * delta
-                x = x + (d + self.beta * ema) * (sigmas[i + 1] - sigmas[i])
+                ema = (1.0 - alpha) * ema + alpha * delta
+                x = x + (d + beta * ema) * (sigmas[i + 1] - sigmas[i])
 
             d_prev = d
 
