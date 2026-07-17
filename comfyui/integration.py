@@ -40,54 +40,20 @@ def sample_infinity(
     disable: bool = False,
     alpha: float = 0.5,
     beta: float = 0.5,
-    zeta: float = 0.80,
 ) -> torch.Tensor:
     """ComfyUI k_diffusion sampler function for InfinitySampler.
 
     Parameters match the standard ComfyUI sampler signature:
         ``model(x, sigma * s_in, **extra_args)``
-
-    The ``disable`` parameter is accepted but not consumed (ComfyUI provides
-    its own progress bar handling internally).
     """
-    sampler = InfinitySampler(alpha=alpha, beta=beta, zeta=zeta)
+    sampler = InfinitySampler(alpha=alpha, beta=beta)
     s_in = x.new_ones([x.shape[0]])
     extra_args = {} if extra_args is None else extra_args
 
     def denoise_fn(x_t, sigma_t):
         return model(x_t, sigma_t * s_in, **extra_args)
 
-    steps = sigmas.numel() - 1
-
-    for i in range(steps):
-        denoised = denoise_fn(x, sigmas[i])
-        d = (x - denoised) / sigmas[i].reshape(-1, *([1] * (x.ndim - 1)))
-
-        if callback is not None:
-            callback({"x": x, "i": i, "sigma": sigmas[i], "sigma_hat": sigmas[i], "denoised": denoised})
-
-        if i == 0:
-            x = x + d * (sigmas[i + 1] - sigmas[i])
-            ema = torch.zeros_like(d)
-        else:
-            delta = d - d_prev
-            ema = (1.0 - alpha) * ema + alpha * delta
-            x = x + (d + beta * ema) * (sigmas[i + 1] - sigmas[i])
-
-            # Self-adaptive ancestral noise — controlled by EMA magnitude.
-            d_norm = d.abs().mean() + 1e-8
-            ema_norm = ema.abs().mean() / d_norm
-            eta_adaptive = zeta * min(1.0, ema_norm * 10.0)
-            if eta_adaptive > 0.001 and sigmas[i + 1] > 0:
-                sf = sigmas[i]
-                st = sigmas[i + 1]
-                sigma_up = min(float(st), eta_adaptive * (float(st)**2 * (float(sf)**2 - float(st)**2) / (float(sf)**2 + 1e-8))**0.5)
-                noise = torch.randn_like(x) * sigma_up
-                x = x + noise
-
-        d_prev = d
-
-    return x
+    return sampler.sample(denoise_fn, x, sigmas)
 
 
 def infinity_scheduler(model_sampling, steps: int) -> torch.Tensor:

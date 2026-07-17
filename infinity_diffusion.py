@@ -157,22 +157,17 @@ class InfinityScheduler:
 
 
 class InfinitySampler:
-    """Self-stabilizing sampler with EMA correction and adaptive noise.
+    """Self-stabilizing sampler with EMA correction (Infinity).
 
     The first step uses an Euler bootstrap.  Subsequent steps apply an
-    EMA-modulated correction to the ODE derivative, plus a self-adaptive
-    ancestral-style noise injection controlled by the EMA magnitude.
-
-    When the EMA is large (derivative still changing), noise is injected at
-    the ancestral step to help the model find cleaner edges.  When the EMA
-    decays to zero (converged), noise shuts off and the sampler reverts to
-    purely deterministic Euler — no mode switch, no threshold.
+    EMA-modulated correction to the ODE derivative:
 
         d_i       = (x_i - f(x_i, sigma_i)) / sigma_i
         ema_i     = (1 - alpha) * ema_{i-1} + alpha * (d_i - d_{i-1})
-        eta_i     = zeta * min(1.0, |ema_i| / |d_i| * 10)
-        sigma_up  = min(sigma_{i+1}, eta_i * (sigma_{i+1}^2 * ...)^0.5)
-        x_{i+1}   = x_i + h * (d_i + beta * ema_i) + noise * sigma_up
+        x_{i+1}   = x_i + h_i * (d_i + beta * ema_i)
+
+    When the EMA decays to zero (converged), the correction vanishes and
+    the method reverts to plain Euler — no mode switch, no threshold.
 
     Parameters
     ----------
@@ -180,22 +175,15 @@ class InfinitySampler:
         EMA coefficient in (0, 1].  Default 0.5.
     beta : float, optional
         Correction strength, must be < 1.  Default 0.5.
-    zeta : float, optional
-        Maximum ancestral eta for adaptive noise.  Default 0.80.
-        At EMA_norm >= 0.1, eta reaches zeta and noise peaks at
-        ancestral-sampler level.
     """
 
-    def __init__(self, alpha: float = 0.5, beta: float = 0.5, zeta: float = 0.80):
+    def __init__(self, alpha: float = 0.5, beta: float = 0.5):
         if not 0.0 < alpha <= 1.0:
             raise ValueError(f"alpha must be in (0, 1], got {alpha}")
         if not 0.0 <= beta < 1.0:
             raise ValueError(f"beta must be in [0, 1), got {beta}")
-        if not 0.0 <= zeta <= 1.0:
-            raise ValueError(f"zeta must be in [0, 1], got {zeta}")
         self.alpha = alpha
         self.beta = beta
-        self.zeta = zeta
 
     @torch.no_grad()
     def sample(
@@ -203,6 +191,7 @@ class InfinitySampler:
         denoise_fn,
         x: torch.Tensor,
         sigmas: torch.Tensor,
+        callback=None,
     ) -> torch.Tensor:
         """Run the infinity sampling loop.
 
@@ -218,6 +207,9 @@ class InfinitySampler:
             1-D noise schedule produced by InfinityScheduler.sigmas or any
             monotonic decreasing sequence of length N+1 where the last element
             is 0.
+        callback : callable, optional
+            A function ``callback({'x': x, 'i': i, 'sigma': sigma, 'denoised': denoised})``
+            called after each denoising step for progress reporting.
 
         Returns
         -------
@@ -239,6 +231,9 @@ class InfinitySampler:
             denoised = denoise_fn(x, sigmas[i].item())
             d = _to_d(x, sigmas[i], denoised)
 
+            if callback is not None:
+                callback({"x": x, "i": i, "sigma": sigmas[i], "denoised": denoised})
+
             if i == 0:
                 x = x + d * (sigmas[i + 1] - sigmas[i])
                 ema = torch.zeros_like(d)
@@ -246,18 +241,6 @@ class InfinitySampler:
                 delta = d - d_prev
                 ema = (1.0 - self.alpha) * ema + self.alpha * delta
                 x = x + (d + self.beta * ema) * (sigmas[i + 1] - sigmas[i])
-
-                # Self-adaptive ancestral noise — proportional to EMA magn.
-                # When ema -> 0 (converged), eta -> 0, noise shuts off.
-                d_norm = d.abs().mean() + 1e-8
-                ema_norm = ema.abs().mean() / d_norm
-                eta_adaptive = self.zeta * min(1.0, ema_norm * 10.0)
-                if eta_adaptive > 0.001 and sigmas[i + 1] > 0:
-                    sf = sigmas[i]
-                    st = sigmas[i + 1]
-                    sigma_up = min(st, eta_adaptive * (st ** 2 * (sf ** 2 - st ** 2) / sf ** 2) ** 0.5)
-                    noise = torch.randn_like(x) * sigma_up
-                    x = x + noise
 
             d_prev = d
 
