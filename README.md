@@ -109,4 +109,4 @@ Python-based diffusion tool.
 
 ## License
 
-GNU General Public License v3.0.  See LICENSE.
+MIT License.  See LICENSE.
