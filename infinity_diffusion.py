@@ -149,7 +149,7 @@ class InfinityScheduler:
             # budget from the first step toward the last without creating
             # extreme gaps.  All sigmas come from the model's training set.
             u = torch.linspace(0.0, 1.0, self.steps)
-            strength = min(1.0, self.steps / 30.0)
+            strength = min(0.6, self.steps / 50.0)
             f = u - strength * (torch.sin(math.pi * u) / math.pi)
             timesteps = self._timestep_start + (self._timestep_end - self._timestep_start) * f
             sigmas = self.sigma_fn(timesteps)

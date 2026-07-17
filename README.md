@@ -45,12 +45,27 @@ room.  The strength s adapts to the step count:
 
 | Steps | s | First step gap | Last step gap |
 |---|---|---|---|
-| 10 | 0.33 | 0.67x linear | 1.33x linear |
-| 20 | 0.67 | 0.33x linear | 1.67x linear |
-| 30 | 1.00 | nearly zero | ~2x linear |
+| 10 | 0.20 | 0.80x linear | 1.20x linear |
+| 20 | 0.40 | 0.60x linear | 1.40x linear |
+| 30 | 0.60 | 0.40x linear | 1.60x linear |
 
 All sigmas pass through the model's native sigma function, so every noise
 level is from the model's training set &mdash; no jagged edges.
+
+## Benchmark
+
+Measured on waiMatureIllustrious v2.0 (SDXL) at 512x512, 30 steps, CFG 7.0,
+seed 9500:
+
+| Sampler + Scheduler | CSS (higher = cleaner) |
+|---|---|
+| **Infinity + Infinity** | **0.0369** |
+| Infinity + normal | 0.0354 |
+| DPM++ 2M + normal | 0.0273 |
+| Euler + normal | 0.0305 |
+
+The Infinity sampler paired with the Infinity scheduler scored highest
+overall.  Directionality (edge cleanness) follows the same ranking.
 
 ## When to use it
 
@@ -74,7 +89,7 @@ When you might prefer something else:
 | Minimum resource usage | Euler |
 
 All 9 sampler/scheduler combinations, same model, seed, and prompt
-(waiMatureIllustrious v2.0, SDXL, seed 9000) at 512x512, 30 steps,
+(waiMatureIllustrious v2.0, SDXL, seed 9500) at 512x512, 30 steps,
 CFG 7.0.
 
 Prompt: *1girl, solo, anime girl, detailed face, detailed eyes, intricate hair,
