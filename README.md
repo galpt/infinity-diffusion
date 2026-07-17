@@ -1,4 +1,4 @@
-# infinity-diffusion
+# Infinity Diffusion
 
 A first-order ODE solver with EMA-modulated derivative correction and
 self-adaptive ancestral noise injection for diffusion models.  It produces
@@ -14,7 +14,7 @@ when the trajectory changes direction, and they require a mode switch near zero
 sigma where their math breaks down.  Ancestral samplers produce clean edges but
 are non-deterministic and inconsistent across seeds.
 
-The infinity sampler combines the best of all three:
+The Infinity sampler combines the best of all three:
 
 1. **EMA-corrected derivative.**  Tracks how the denoising direction changes
    between steps and applies a smoothed, damped correction (beta < 1) that
@@ -37,12 +37,12 @@ Measured on a real SDXL model (waiMatureIllustrious v2.0, 384x384, 20 steps):
 
 | Sampler | Edge sharpness | Line cleanness | Overall score |
 |---------|---------------|----------------|--------------|
-| **infinity** | **0.0644** | 0.2651 | **0.0661** |
+| **Infinity** | **0.0644** | 0.2651 | **0.0661** |
 | dpmpp_2s_ancestral | 0.0351 | 0.4513 | 0.0590 |
 | DPM++ 2M | 0.0293 | 0.2723 | 0.0272 |
 | Euler  | 0.0275 | 0.2328 | 0.0221 |
 
-The infinity sampler scored 12% higher overall than the previous best
+The Infinity sampler scored 12% higher overall than the previous best
 (ancestral) while delivering 1.8x the edge sharpness.  The adaptive noise
 provides ancestral-quality edge cleanup without the seed inconsistency.
 
