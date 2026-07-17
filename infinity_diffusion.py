@@ -161,17 +161,18 @@ class InfinitySampler:
 
     The first step uses an Euler bootstrap.  Subsequent steps apply an
     EMA-modulated correction to the ODE derivative, plus a self-adaptive
-    noise injection that helps clean up edges without sacrificing stability.
+    ancestral-style noise injection controlled by the EMA magnitude.
+
+    When the EMA is large (derivative still changing), noise is injected at
+    the ancestral step to help the model find cleaner edges.  When the EMA
+    decays to zero (converged), noise shuts off and the sampler reverts to
+    purely deterministic Euler — no mode switch, no threshold.
 
         d_i       = (x_i - f(x_i, sigma_i)) / sigma_i
         ema_i     = (1 - alpha) * ema_{i-1} + alpha * (d_i - d_{i-1})
-        x_{i+1}   = x_i + h * (d_i + beta * ema_i)
-        x_{i+1}  += noise * sigma_{i+1} * zeta * ema_norm   (adaptive)
-
-    The noise injection is proportional to the EMA magnitude.  When the EMA
-    is large (derivative still changing), noise helps the model find cleaner
-    edges.  When the EMA decays to zero (converged), noise shuts off and
-    the sampler becomes purely deterministic.
+        eta_i     = zeta * min(1.0, |ema_i| / |d_i| * 10)
+        sigma_up  = min(sigma_{i+1}, eta_i * (sigma_{i+1}^2 * ...)^0.5)
+        x_{i+1}   = x_i + h * (d_i + beta * ema_i) + noise * sigma_up
 
     Parameters
     ----------
@@ -180,12 +181,12 @@ class InfinitySampler:
     beta : float, optional
         Correction strength, must be < 1.  Default 0.5.
     zeta : float, optional
-        Maximum noise injection coefficient.  Default 0.20.
-        Noise_scale = min(zeta, zeta * ema_norm * 2.0), so at
-        EMA_norm = 0.5 the effective noise_scale reaches zeta.
+        Maximum ancestral eta for adaptive noise.  Default 0.80.
+        At EMA_norm >= 0.1, eta reaches zeta and noise peaks at
+        ancestral-sampler level.
     """
 
-    def __init__(self, alpha: float = 0.5, beta: float = 0.5, zeta: float = 0.20):
+    def __init__(self, alpha: float = 0.5, beta: float = 0.5, zeta: float = 0.80):
         if not 0.0 < alpha <= 1.0:
             raise ValueError(f"alpha must be in (0, 1], got {alpha}")
         if not 0.0 <= beta < 1.0:
@@ -246,13 +247,16 @@ class InfinitySampler:
                 ema = (1.0 - self.alpha) * ema + self.alpha * delta
                 x = x + (d + self.beta * ema) * (sigmas[i + 1] - sigmas[i])
 
-                # Self-adaptive noise — proportional to EMA magnitude.
-                # Shuts off automatically when ema -> 0 (converged).
-                d_norm = d.abs().mean()
-                ema_norm = ema.abs().mean() / (d_norm + 1e-8)
-                noise_scale = min(self.zeta, self.zeta * ema_norm * 2.0)
-                if noise_scale > 0.001:
-                    noise = torch.randn_like(x) * sigmas[i + 1] * noise_scale
+                # Self-adaptive ancestral noise — proportional to EMA magn.
+                # When ema -> 0 (converged), eta -> 0, noise shuts off.
+                d_norm = d.abs().mean() + 1e-8
+                ema_norm = ema.abs().mean() / d_norm
+                eta_adaptive = self.zeta * min(1.0, ema_norm * 10.0)
+                if eta_adaptive > 0.001 and sigmas[i + 1] > 0:
+                    sf = sigmas[i]
+                    st = sigmas[i + 1]
+                    sigma_up = min(st, eta_adaptive * (st ** 2 * (sf ** 2 - st ** 2) / sf ** 2) ** 0.5)
+                    noise = torch.randn_like(x) * sigma_up
                     x = x + noise
 
             d_prev = d

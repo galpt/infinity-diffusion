@@ -40,7 +40,7 @@ def sample_infinity(
     disable: bool = False,
     alpha: float = 0.5,
     beta: float = 0.5,
-    zeta: float = 0.20,
+    zeta: float = 0.80,
 ) -> torch.Tensor:
     """ComfyUI k_diffusion sampler function for InfinitySampler.
 
@@ -74,12 +74,15 @@ def sample_infinity(
             ema = (1.0 - alpha) * ema + alpha * delta
             x = x + (d + beta * ema) * (sigmas[i + 1] - sigmas[i])
 
-            # Self-adaptive noise — proportional to EMA magnitude.
-            d_norm = d.abs().mean()
-            ema_norm = ema.abs().mean() / (d_norm + 1e-8)
-            noise_scale = min(zeta, zeta * ema_norm * 2.0)
-            if noise_scale > 0.001:
-                noise = torch.randn_like(x) * sigmas[i + 1] * noise_scale
+            # Self-adaptive ancestral noise — controlled by EMA magnitude.
+            d_norm = d.abs().mean() + 1e-8
+            ema_norm = ema.abs().mean() / d_norm
+            eta_adaptive = zeta * min(1.0, ema_norm * 10.0)
+            if eta_adaptive > 0.001 and sigmas[i + 1] > 0:
+                sf = sigmas[i]
+                st = sigmas[i + 1]
+                sigma_up = min(float(st), eta_adaptive * (float(st)**2 * (float(sf)**2 - float(st)**2) / (float(sf)**2 + 1e-8))**0.5)
+                noise = torch.randn_like(x) * sigma_up
                 x = x + noise
 
         d_prev = d
