@@ -7,6 +7,27 @@ correction.  The scheduler redistributes step budget from the first step
 toward the last using a smooth sine perturbation, giving the final cleanup
 step more sigma range without introducing jagged edges.
 
+## When to use it
+
+**Detailed scenes.**  The EMA correction keeps refining small details across
+multiple steps without overshooting, which helps when the image has multiple
+subjects competing for attention.
+
+**Batch generation.**  Deterministic output means you can compare prompts
+or models without noise injection confounding the results.
+
+**Any step count, one setting.**  Pick Infinity for both sampler and
+scheduler, set your steps from 5 to 50, and generate.  The scheduler adapts
+automatically &mdash; near-linear at low steps, sine-perturbed at high steps.
+
+When you might prefer something else:
+
+| If you want... | Use... |
+|---|---|
+| Maximum per-step accuracy | DPM++ 2M (may overshoot) |
+| Deterministic, no risk | Infinity sampler |
+| Minimum resource usage | Euler |
+
 ## Sampler
 
 Euler is stable but needs many steps for fine detail.  Higher-order methods
@@ -67,26 +88,7 @@ seed 9500:
 The Infinity sampler paired with the Infinity scheduler scored highest
 overall.  Directionality (edge cleanness) follows the same ranking.
 
-## When to use it
-
-**Detailed scenes.**  The EMA correction keeps refining small details across
-multiple steps without overshooting, which helps when the image has multiple
-subjects competing for attention.
-
-**Batch generation.**  Deterministic output means you can compare prompts
-or models without noise injection confounding the results.
-
-**Any step count, one setting.**  Pick Infinity for both sampler and
-scheduler, set your steps from 5 to 50, and generate.  The scheduler adapts
-automatically &mdash; near-linear at low steps, sine-perturbed at high steps.
-
-When you might prefer something else:
-
-| If you want... | Use... |
-|---|---|
-| Maximum per-step accuracy | DPM++ 2M (may overshoot) |
-| Deterministic, no risk | Infinity sampler |
-| Minimum resource usage | Euler |
+## Visual comparison
 
 All 9 sampler/scheduler combinations, same model, seed, and prompt
 (waiMatureIllustrious v2.0, SDXL, seed 9500) at 512x512, 30 steps,
