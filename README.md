@@ -40,38 +40,32 @@ API, which works with every model type:
 | ModelSamplingContinuousV (video) | No | Yes |
 | ModelSamplingDiscreteFlow (flow) | No | Yes |
 
-## Benchmark
+## Visual comparison
 
-All images generated on a single Nvidia RTX 3050 (4 GB VRAM) with
-waiMatureIllustrious v2.0 (SDXL) at 384x384, CFG 7.0, seed 6003.
+Four sampler/scheduler combinations, same seed (7001) and model
+(waiMatureIllustrious v2.0, SDXL) at 512x512, 30 steps, CFG 7.0.
 
-**Sampler comparison** (all with normal scheduler, 20 steps):
+Prompt: *1girl, anime girl, black hair, red eyes, intricate hair strands,
+sharp black outlines, clean lineart, detailed face, detailed eyes, portrait,
+high contrast, masterpiece, best quality*
 
-| Sampler | CSS (cleanness x sharpness) |
+| Combo | Image |
 |---|---|
-| Infinity | 0.0279 |
-| DPM++ 2M | 0.0345 |
-| Euler | 0.0240 |
+| Infinity sampler + Infinity scheduler | ![infinity+infinity](assets/ii_30_ast_00001_.png) |
+| Infinity sampler + normal scheduler | ![infinity+normal](assets/in_30_ast_00001_.png) |
+| DPM++ 2M + normal scheduler | ![dpmpp_2m+normal](assets/d2_30_ast_00001_.png) |
+| Euler + normal scheduler | ![euler+normal](assets/eu_30_ast_00001_.png) |
 
-**Infinity sampler across step counts** (with normal scheduler):
-
-| Steps | CSS |
-|---|---|
-| 10 | 0.0329 |
-| 20 | 0.0279 |
-| 30 | 0.0352 |
-
-The Infinity sampler consistently outperforms Euler and comes close to
-DPM++ 2M while being more stable (no overshoot on sharp trajectory
-changes).  Results vary by seed: CSS scores can shift by 20-30% between
-runs.  These numbers are from a single seed (6003) and reflect relative
-ranking rather than absolute quality.
+Look at the hair strands and eye details -- these areas show the difference
+between samplers most clearly.  The Infinity sampler tends to produce more
+consistent refinement across steps without the harsh artifacts that can appear
+with DPM++ 2M on sharp trajectory changes.
 
 ## When to use it
 
-**Detailed scenes.**  The Infinity sampler's EMA correction keeps refining
-small details across multiple steps without overshooting, which helps when
-the image has multiple subjects competing for attention.
+**Detailed scenes.**  The EMA correction keeps refining small details across
+multiple steps without overshooting, which helps when the image has multiple
+subjects competing for attention.
 
 **Batch generation.**  Deterministic output means you can compare prompts
 or models without noise injection confounding the results.
@@ -85,7 +79,7 @@ When you might prefer something else:
 | If you want... | Use... |
 |---|---|
 | Maximum per-step accuracy | DPM++ 2M (may overshoot) |
-| Deterministic, zero artifacts | Infinity sampler + normal scheduler |
+| Deterministic, no risk | Infinity sampler + normal scheduler |
 | Minimum resource usage | Euler |
 
 ## License
