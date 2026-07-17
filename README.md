@@ -176,6 +176,20 @@ that does not append zero, add a zero at the end.  If you use the infinity
 scheduler with a different sampler, verify that sampler does not divide by
 sigma after the last step.
 
+### Scheduler computes on wrong device
+
+The InfinityScheduler as a standalone class always returns CPU tensors (it
+receives plain Python floats for sigma_min and sigma_max).  When integrated
+into ComfyUI, the scheduler function extracts sigma_min and sigma_max from
+the model sampling object, which may live on a GPU device.  If the ramp
+tensor is created on CPU while the sigma values are on GPU, the multiplication
+fails with a cross-device error.
+
+**Mitigation**: The ComfyUI integration function in `comfyui/integration.py`
+converts sigma_min and sigma_max to Python floats before any tensor operation,
+keeping the entire computation on CPU regardless of the model's device.  This
+matches the pattern used by every other ComfyUI scheduler handler.
+
 ---
 
 ## Using the code
