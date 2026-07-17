@@ -7,6 +7,27 @@ the instability of higher-order methods.  The scheduler produces sigma values
 identical to the normal scheduler but works with any model type, not just
 discrete-timestep models.
 
+## When to use it
+
+**Detailed scenes.**  The EMA correction keeps refining small details across
+multiple steps without overshooting, which helps when the image has multiple
+subjects competing for attention.
+
+**Batch generation.**  Deterministic output means you can compare prompts
+or models without noise injection confounding the results.
+
+**Any model type.**  The Infinity scheduler works with every diffusion
+model format.  If you switch between SDXL, FLUX, and video models, you
+only need to remember one scheduler name.
+
+When you might prefer something else:
+
+| If you want... | Use... |
+|---|---|
+| Maximum per-step accuracy | DPM++ 2M (may overshoot) |
+| Deterministic, no risk | Infinity sampler + normal scheduler |
+| Minimum resource usage | Euler |
+
 ## Sampler
 
 Euler is stable but needs many steps for fine detail.  Higher-order methods
@@ -60,27 +81,6 @@ Look at the hair strands and eye details &mdash; these areas show the difference
 between samplers most clearly.  The Infinity sampler tends to produce more
 consistent refinement across steps without the harsh artifacts that can appear
 with DPM++ 2M on sharp trajectory changes.
-
-## When to use it
-
-**Detailed scenes.**  The EMA correction keeps refining small details across
-multiple steps without overshooting, which helps when the image has multiple
-subjects competing for attention.
-
-**Batch generation.**  Deterministic output means you can compare prompts
-or models without noise injection confounding the results.
-
-**Any model type.**  The Infinity scheduler works with every diffusion
-model format.  If you switch between SDXL, FLUX, and video models, you
-only need to remember one scheduler name.
-
-When you might prefer something else:
-
-| If you want... | Use... |
-|---|---|
-| Maximum per-step accuracy | DPM++ 2M (may overshoot) |
-| Deterministic, no risk | Infinity sampler + normal scheduler |
-| Minimum resource usage | Euler |
 
 ## License
 
