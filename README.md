@@ -25,9 +25,9 @@ When you might prefer something else:
 
 | If you want... | Use... |
 |---|---|
-| Maximum per-step accuracy | DPM++ 2M (may overshoot) |
-| Deterministic, lower risk | Infinity sampler |
-| Minimum resource usage | Euler |
+| High per-step accuracy, accept some overshoot risk | DPM++ 2M |
+| Stable default, no tuning needed, clean edges | Infinity sampler + scheduler |
+| Maximum speed, minimum compute | Euler |
 
 ## Sampler
 
