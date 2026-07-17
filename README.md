@@ -75,10 +75,6 @@ sharp black outlines, clean lineart, high contrast, crown, jewelry, lace trim*
 | DPM++ 2M | ![dpm+inf](assets/dpm_inf_30.png) | ![dpm+norm](assets/dpm_nor_30.png) | ![dpm+kar](assets/dpm_kar_30.png) |
 | Euler | ![eul+inf](assets/eul_inf_30.png) | ![eul+norm](assets/eul_nor_30.png) | ![eul+kar](assets/eul_kar_30.png) |
 
-The file sizes hint at the amount of high-frequency content: Karras scheduler
-images are the largest (370-430 KB), infinity+infinity is the smallest (297 KB),
-suggesting less jagged noise.
-
 ## License
 
 MIT License.  See LICENSE.
