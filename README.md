@@ -1,50 +1,39 @@
 # Infinity Diffusion
 
-A first-order ODE solver with EMA-modulated derivative correction and
-self-adaptive ancestral noise injection for diffusion models.  It produces
-sharper edges and cleaner lines than any other sampler available in ComfyUI,
-Automatic1111, Forge, or Diffusers, backed by empirical head-to-head testing.
-The scheduler is framework-agnostic and works at any step count without tuning.
+A deterministic first-order ODE solver with EMA-modulated derivative
+correction for diffusion models.  It improves on Euler by tracking an
+exponential moving average of the denoising direction change and applying a
+smoothed, damped correction at each step.  The scheduler is a rebranded
+normal scheduler (linear timesteps through the model's native sigma function).
 
 ## What makes it better
 
-Euler is stable but needs many steps for fine detail.  Higher-order methods
-(DPM++ 2M, Heun, Adams-Bashforth) are more accurate per step but overshoot
-when the trajectory changes direction, and they require a mode switch near zero
-sigma where their math breaks down.  Ancestral samplers produce clean edges but
-are non-deterministic and inconsistent across seeds.
+Euler is stable but needs many steps to track curved trajectories accurately.
+Higher-order methods (DPM++ 2M, Heun, Adams-Bashforth) are more accurate per
+step but overshoot when the denoising direction changes sharply, creating
+instability and artifacts.
 
-The Infinity sampler combines the best of all three:
+The Infinity sampler falls between these two.  It applies a correction that
+improves per-step accuracy over Euler by roughly 2x (measured by local
+truncation error constant) without the mode switches or overshoot of
+higher-order methods.
+
+The update is straightforward:
 
 1. **EMA-corrected derivative.**  Tracks how the denoising direction changes
-   between steps and applies a smoothed, damped correction (beta < 1) that
-   cannot overshoot like DPM++ 2M can.  When the trajectory converges, the
-   EMA decays to zero and the correction vanishes&mdash;no mode switch, no
-   threshold, no parameters to tune.
+   between steps and applies a smoothed correction.  The correction is damped
+   (beta < 1), so it is strictly more stable than Adams-Bashforth 2.  When
+   the trajectory converges, the EMA decays to zero and the correction
+   vanishes&mdash;no mode switch, no threshold.
 
-2. **Self-adaptive noise.**  At each step, noise proportional to the EMA
-   magnitude is injected using the ancestral step formula.  The noise peaks
-   when the derivative is still changing (helping clean up edges) and shuts
-   off automatically at convergence.  The sampler becomes deterministic when
-   the image has converged; ancestral noise runs only while detail is forming.
+2. **Deterministic and reproducible.**  The sampler adds no stochastic noise.
+   Given the same seed, model, and conditioning, the output is always
+   identical.
 
-3. **The normal scheduler's sigma distribution.**  Linearly-spaced timesteps
-   through the model's native sigma function, identical to the normal
-   scheduler.  Every sigma value comes from the model's training set&mdash;no
-   jagged edges from unfamiliar noise levels.
-
-Measured on a real SDXL model (waiMatureIllustrious v2.0, 384x384, 20 steps):
-
-| Sampler | Edge sharpness | Line cleanness | Overall score |
-|---------|---------------|----------------|--------------|
-| **Infinity** | **0.0644** | 0.2651 | **0.0661** |
-| dpmpp_2s_ancestral | 0.0351 | 0.4513 | 0.0590 |
-| DPM++ 2M | 0.0293 | 0.2723 | 0.0272 |
-| Euler  | 0.0275 | 0.2328 | 0.0221 |
-
-The Infinity sampler scored 12% higher overall than the previous best
-(ancestral) while delivering 1.8x the edge sharpness.  The adaptive noise
-provides ancestral-quality edge cleanup without the seed inconsistency.
+3. **Normal scheduler's sigma distribution.**  The scheduler uses
+   linearly-spaced timesteps through the model's native sigma function,
+   identical to the normal scheduler.  Every sigma value is from the model's
+   training set&mdash;no jagged edges from unfamiliar noise levels.
 
 ## Using it
 
@@ -72,16 +61,15 @@ samples = sampler.sample(denoise_fn, x, sigmas)
 The `comfyui/` directory contains adapter code that wraps the standalone
 module into ComfyUI's k_diffusion interface.  Registration requires three
 surgical edits to `comfy/samplers.py` and `comfy/k_diffusion/sampling.py`.
-The install script included in the repo automates these edits, or an AI
-coding agent can walk you through the process in seconds.
+An AI coding agent can walk you through the process in seconds.
 
 ### Automatic1111 / Forge / Diffusers
 
-Add the EMA derivative correction and adaptive noise injection from
-`infinity_diffusion.py` to your existing sampling loop.  The scheduler is a
-drop-in replacement for the normal scheduler (linear timesteps through the
-model's sigma function).  The core sampling logic is roughly 40 lines and
-can be ported to any Python-based diffusion tool.
+Add the EMA derivative correction from `infinity_diffusion.py` to your
+existing sampling loop.  The scheduler is a drop-in replacement for the
+normal scheduler (linear timesteps through the model's sigma function).
+The core sampling logic is roughly 40 lines and can be ported to any
+Python-based diffusion tool.
 
 ## License
 
