@@ -1,10 +1,11 @@
 # infinity-diffusion
 
-A second-order linear multi-step sampler and power-ramp sigma scheduler for
-diffusion models.  The sampler improves on Euler by tracking an exponential
-moving average of the ODE derivative change and applying a smoothed correction
-at each step.  The scheduler distributes steps along an adjustable power curve
-so resolution lands where it matters for perceptual quality.
+A first-order linear multi-step sampler with EMA correction and a self-adaptive
+sigma scheduler for diffusion models.  The sampler improves on Euler by tracking
+an exponential moving average of the ODE derivative change and applying a
+smoothed correction at each step.  The scheduler distributes steps in
+sigma^(1/rho) space, adapting the exponent automatically so the schedule works
+at any step count without tuning.
 
 This is primarily a place to read about the design and trade-offs.  The math,
 the failure modes it tries to avoid, and why certain choices were made.
@@ -104,9 +105,8 @@ two derivative samples exist.
 ### Parameters
 
 **alpha** (default 0.5) controls how quickly the EMA forgets old derivative
-measurements.  At alpha = 1 the EMA collapses to the latest delta and the
-method is standard Adams-Bashforth 2.  At alpha = 0 no correction is applied
-and the method is Euler.  Values around 0.3 - 0.7 give the best balance.
+measurements.  At alpha = 0 no correction is applied and the method is Euler.
+Values around 0.3 - 0.7 give the best balance for typical generation.
 
 **beta** (default 0.5) controls how much of the smoothed derivative change
 is actually used.  Values below 1 are essential for stability.  With the
@@ -135,8 +135,7 @@ The infinity sampler mitigates all three:
 
 3. When the trajectory converges, the derivative stops changing, the EMA
    decays toward zero, and the correction vanishes.  There is no mode switch
-   or threshold: the method transitions continuously from second-order to
-   first-order as convergence progresses.
+    or threshold: the correction fades out smoothly as convergence progresses.
 
 Mathematically, the update is equivalent to:
 
@@ -159,7 +158,7 @@ designed to handle, and what happens if they still occur.
 ### Correction diverges despite damping
 
 If the model output is very noisy (sigma near sigma_max) or very erratic, the
-EMA can grow large.  The correction beta * ema is then subtracted from d_i,
+EMA can grow large.  The correction beta * ema is then added to d_i,
 but if d_i itself is small, the correction can dominate.  Symptoms: generated
 content looks structurally correct but has high-frequency noise, or the image
 has repeating patterns (texture doubling).
@@ -189,15 +188,17 @@ default, 60-70% of steps fall below sigma 5.0.
 
 ### Zero terminal sigma causes division issues
 
-The InfinityScheduler appends a zero-sigma step.  If a sampler divides by
-sigma at that step, it produces infinity.  The infinity sampler handles this
-correctly because it reads the derivative from the denoiser output at that
-sigma, and the model returns a clean image at sigma = 0.
+The InfinityScheduler appends a zero-sigma step as the last element of the
+sigma array.  The infinity sampler never divides by this value: its loop
+pairs consecutive elements (sigma[i], sigma[i+1]) and calls the denoiser at
+sigma[i] for each pair.  The last pair is (sigma_min, 0), and the denoiser is
+called at sigma_min to produce the derivative used for the final cleanup step.
+However, a sampler that divides by sigma[i+1] instead of sigma[i] would hit
+a division by zero.
 
-**Mitigation**: If you are using the infinity sampler with a custom scheduler
-that does not append zero, add a zero at the end.  If you use the infinity
-scheduler with a different sampler, verify that sampler does not divide by
-sigma after the last step.
+**Mitigation**: If you use the infinity scheduler with a different sampler,
+verify that sampler reads sigma[i] (the current step) for its derivative
+computation, not sigma[i+1] (the next step).
 
 ### Scheduler computes on wrong device
 
