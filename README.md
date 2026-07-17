@@ -12,10 +12,9 @@ the failure modes it tries to avoid, and why certain choices were made.
 
 ---
 
-> **TL;DR**
->
-> Using the infinity sampler together with the infinity scheduler gives these
-> properties compared to other sampler/scheduler combinations:
+> [!TIP]
+> **TL;DR** — Using the infinity sampler together with the infinity scheduler
+> gives these properties compared to other sampler/scheduler combinations:
 >
 > 1. **No step-count tuning.**  The scheduler adjusts rho automatically based
 >    on how many steps you request.  For 5 steps it spreads sigma broadly so
@@ -46,7 +45,7 @@ the failure modes it tries to avoid, and why certain choices were made.
 >    (no s_churn, no ancestral noise).  Given the same seed, model, and
 >    conditioning, the output is identical every time.
 >
-> **Trade-off**: The per-step cost is one model evaluation, the same as Euler
+> **Trade-off.** The per-step cost is one model evaluation, the same as Euler
 > or DPM++ 2M.  The improvement over Euler comes from needing fewer steps, not
 > from cheaper steps.  Methods like DPM++ 2M can sometimes achieve slightly
 > better accuracy per step than the infinity sampler on very smooth trajectories
