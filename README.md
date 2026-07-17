@@ -1,12 +1,12 @@
 # infinity-diffusion
 
-A first-order linear multi-step sampler with EMA correction and a
-model-agnostic sigma scheduler for diffusion models.  The sampler improves on
-Euler by tracking an exponential moving average of the ODE derivative change
-and applying a smoothed correction at each step.  The scheduler maps
-linearly-spaced timesteps through the model's native sigma() function,
-producing the same noise-level distribution as the normal scheduler but
-without hardcoding model-specific indices.
+A first-order linear multi-step sampler with EMA correction for diffusion
+models.  The sampler improves on Euler by tracking an exponential moving
+average of the ODE derivative change and applying a smoothed correction at
+each step.  The correction is damped (beta < 1) so it cannot overshoot, and
+naturally fades to zero on convergence.  The associated sigma schedule is
+the normal scheduler (linear timesteps through native sigma) — the innovation
+is in the sampler, not the sigma distribution.
 
 This is primarily a place to read about the design and trade-offs.  The math,
 the failure modes it tries to avoid, and why certain choices were made.
@@ -17,12 +17,12 @@ the failure modes it tries to avoid, and why certain choices were made.
 > **TL;DR** — Using the infinity sampler together with the infinity scheduler
 > gives these properties compared to other sampler/scheduler combinations:
 >
-> 1. **Same clean lines as the normal scheduler, no tuning.**  The scheduler
->    maps linearly-spaced timesteps through the model's native sigma() function,
->    producing sigma values identical to the normal scheduler.  Because the
->    model only sees noise levels from its training distribution, thin lines
->    and edges stay clean.  The distribution is always optimal at any step
->    count — no Karras rho, no exponential gamma, no parameters to adjust.
+> 1. **Clean lines with the normal scheduler's sigma distribution.**  The
+>    infinity scheduler uses the same linear-timestep distribution as the
+>    normal scheduler.  Every sigma comes from the model's training set,
+>    so thin lines and edges stay clean.  The "infinity" name is a convenience
+>    so users can select it from both dropdowns — the innovation is in the
+>    sampler, not the sigma schedule.
 >
 > 2. **Lower overshoot risk than standard Adams-Bashforth 2.**  The EMA
 >    correction is damped by beta < 1, giving an extrapolation coefficient of
@@ -82,15 +82,15 @@ Euler again — no mode switch, no discontinuity.
 
 ## The scheduler
 
-The scheduler decides which noise levels to visit at each step.  Most images
-are determined in the mid-noise range: early steps block in the broad
-composition; late steps refine edges and texture.  If you waste steps at very
-high or very low noise, you need more total steps for the same quality.
+The infinity scheduler produces sigma values identical to the normal scheduler
+(linear timesteps through the model's native sigma function).  It exists as a
+named alias so users can pick "infinity" for both the sampler and scheduler
+dropdowns without needing to understand which scheduler works with the infinity
+sampler.  The innovation is in the sampler, not the sigma distribution.
 
-The infinity scheduler uses linearly-spaced timesteps mapped through the
-model's native sigma() function.  This is the same approach as the normal
-scheduler, but the infinity scheduler discovers the timestep range through the
-model's API rather than hardcoding indices.
+The normal scheduler was described in Karras et al. (2022) and is the standard
+sigma schedule in ComfyUI, Automatic1111, and other tools.  It maps
+linearly-spaced timesteps through the model's native sigma function:
 
 ```
 t_i        = t_max + (t_min - t_max) * i / (n - 1)
@@ -98,26 +98,11 @@ sigma_i    = sigma(t_i)
 sigma_n    = 0
 ```
 
-where t_max = timestep(sigma_max) and t_min = timestep(sigma_min) are the
-model's native timestep boundaries, and sigma(t) is the model's native
-timestep-to-sigma function.
-
 This is in contrast to sigma-space schedules (Karras, exponential) that compute
-sigma values directly without going through the model's timestep mapping.
-Those schedules may produce noise levels the model was never trained on,
-causing less accurate denoising predictions at low sigma where fine details
-and edges are determined.  The effect is visible as jagged or aliased lines on
-high-contrast features.
-
-The linear timestep approach is optimal because it gives each step a balanced
-share of the total noise budget.  Early steps receive moderate sigma gaps for
-structure formation.  Late steps receive moderate sigma gaps for edge cleanup.
-This balanced distribution is what the model was trained to expect, and it
-produces clean lines regardless of step count.
-
-The infinity scheduler is model-agnostic: it works correctly with any model
-type (ModelSamplingDiscrete for SD1.5/SDXL, ContinuousEDM, Flow matching,
-etc.) by reading the sigma range directly from the model object.
+sigma values directly.  Those schedules may produce noise levels the model was
+never trained on, causing jagged edges on high-contrast features.  Linear
+timesteps avoid this by giving each step a balanced share of the total noise
+budget, which is what the model was trained to expect.
 
 ---
 

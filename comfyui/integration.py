@@ -79,33 +79,12 @@ def sample_infinity(
 
 
 def infinity_scheduler(model_sampling, steps: int) -> torch.Tensor:
-    """ComfyUI scheduler handler for InfinityScheduler.
+    """ComfyUI scheduler handler (delegates to ComfyUI's normal_scheduler).
 
-    Distributes timesteps linearly in the model's native timestep space,
-    then maps through the model's sigma() function.  Every produced sigma
-    value is an interpolation of the model's native training sigmas, which
-    avoids the jagged-edge artifacts that occur with sigma-space schedules.
-
-    Parameters
-    ----------
-    model_sampling :
-        ComfyUI model sampling object with ``sigma_min``, ``sigma_max``,
-        ``timestep``, and ``sigma`` attributes.
-    steps : int
-        Number of sampling steps.
-
-    Returns
-    -------
-    torch.Tensor
-        1-D float32 tensor of length ``steps + 1``, last element zero.
+    The infinity scheduler produces sigma values identical to the normal
+    scheduler.  It exists as a named alias so users can select "infinity"
+    for both dropdowns — the innovation is in the infinity sampler's EMA
+    correction, not in the sigma schedule itself.
     """
-    start = float(model_sampling.timestep(model_sampling.sigma_max))
-    end = float(model_sampling.timestep(model_sampling.sigma_min))
-
-    scheduler = InfinityScheduler(
-        steps,
-        sigma_fn=model_sampling.sigma,
-        timestep_start=start,
-        timestep_end=end,
-    )
-    return scheduler.sigmas
+    import comfy.samplers
+    return comfy.samplers.normal_scheduler(model_sampling, steps)
