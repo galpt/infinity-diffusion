@@ -75,21 +75,28 @@ level is from the model's training set &mdash; no jagged edges.
 
 ## Benchmark
 
-The Infinity sampler paired with the Infinity scheduler scored highest
-overall.  Directionality (edge cleanness) follows the same ranking.
+Measured on waiMatureIllustrious v2.0 (SDXL) at 512x512, 30 steps, CFG 7.0,
+seed 3311874133078797565.  Same prompt and negative prompt as the comparison
+below.
 
-| Sampler + Scheduler | CSS (higher = cleaner) |
-|---|---|
-| **Infinity + Infinity** | **0.0369** |
-| Infinity + normal | 0.0354 |
-| DPM++ 2M + normal | 0.0273 |
-| Euler + normal | 0.0305 |
+| Rank | Sampler + Scheduler | CSS | Directionality |
+|---|---|---|---|
+| 1 | DPM++ 2M + Infinity scheduler | 0.0407 | 0.4190 |
+| **2** | **Infinity + Infinity** | **0.0391** | **0.4626** |
+| 3 | DPM++ 2M + normal scheduler | 0.0350 | 0.4278 |
+| 4 | Infinity + normal scheduler | 0.0312 | 0.3982 |
+| 5 | Euler + normal scheduler | 0.0297 | 0.4025 |
+
+Infinity+Infinity is the runner-up overall, just 4% behind the leader, and
+has the highest directionality &mdash; the cleanest edges of any combination.
+DPM++ 2M's narrow lead on CSS comes at the cost of lower directionality and
+known instability on sharp trajectory changes.
 
 ## Visual comparison
 
 All 9 sampler/scheduler combinations, same model, seed, and prompt
-(waiMatureIllustrious v2.0, SDXL, seed 9500) at 512x512, 30 steps,
-CFG 7.0.
+(waiMatureIllustrious v2.0, SDXL, seed 3311874133078797565) at 512x512,
+30 steps, CFG 7.0.
 
 Prompt: *1girl, solo, anime girl, detailed face, detailed eyes, intricate hair,
 sharp black outlines, clean lineart, high contrast, crown, jewelry, lace trim*
