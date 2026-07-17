@@ -63,12 +63,11 @@ API, which works with every model type:
 
 ## Visual comparison
 
-Four sampler/scheduler combinations, same seed (7001) and model
+Four sampler/scheduler combinations, same seed and model
 (waiMatureIllustrious v2.0, SDXL) at 512x512, 30 steps, CFG 7.0.
 
-Prompt: *1girl, anime girl, black hair, red eyes, intricate hair strands,
-sharp black outlines, clean lineart, detailed face, detailed eyes, portrait,
-high contrast, masterpiece, best quality*
+Prompt: *1girl, solo, anime girl, detailed face, detailed eyes, intricate hair,
+sharp black outlines, clean lineart, high contrast, crown, jewelry, lace trim*
 
 | Combo | Image |
 |---|---|
@@ -76,6 +75,9 @@ high contrast, masterpiece, best quality*
 | Infinity sampler + normal scheduler | ![infinity+normal](assets/in_30_ast_00001_.png) |
 | DPM++ 2M + normal scheduler | ![dpmpp_2m+normal](assets/d2_30_ast_00001_.png) |
 | Euler + normal scheduler | ![euler+normal](assets/eu_30_ast_00001_.png) |
+
+Focus on the crown, jewelry, and lace trim — these high-contrast detailed
+areas reveal the differences between samplers most clearly.
 
 ## License
 
