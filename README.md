@@ -16,11 +16,11 @@ the failure modes it tries to avoid, and why certain choices were made.
 > **TL;DR** — Using the infinity sampler together with the infinity scheduler
 > gives these properties compared to other sampler/scheduler combinations:
 >
-> 1. **No step-count tuning.**  The scheduler adjusts rho automatically based
->    on how many steps you request.  For 5 steps it spreads sigma broadly so
->    every step captures something meaningful.  For 20+ steps it converges to
->    the same distribution as Karras et al. (2022).  You never need to pick a
->    separate scheduler to match your step budget.
+> 1. **No step-count tuning, clean lines.**  The scheduler distributes steps
+>    in the model's native timestep space and maps through its sigma() function,
+>    so every sigma value comes from the model's training distribution.  This
+>    avoids the jagged edges that sigma-space schedules (Karras, exponential)
+>    produce.  Rho self-adapts to the step count automatically.
 >
 > 2. **Lower overshoot risk than standard Adams-Bashforth 2.**  The EMA
 >    correction is damped by beta < 1, giving an extrapolation coefficient of
@@ -85,38 +85,48 @@ are determined in the mid-noise range: early steps block in the broad
 composition; late steps refine edges and texture.  If you waste steps at very
 high or very low noise, you need more total steps for the same quality.
 
-The infinity scheduler interpolates in sigma^(1/rho) space, following the
-same mathematical structure as Karras et al. (2022):
+The infinity scheduler distributes timesteps in the model's native timestep
+space, then maps through the model's sigma() function.  Every produced sigma
+is an interpolation of the model's native training sigmas.
+
+The normal scheduler (available in ComfyUI, Automatic1111, and other tools)
+uses linearly-spaced timesteps and then maps to sigmas through the model's
+training schedule.  The infinity scheduler does the same but replaces the
+linear timestep distribution with a power ramp:
 
 ```
-ramp_i  = i / (n-1)
-sigma_i = (sigma_max^(1/rho) + ramp_i * (sigma_min^(1/rho) - sigma_max^(1/rho)))^rho
-sigma_n = 0
+ramp_i     = (i / (n-1))^rho
+t_i        = t_max + (t_min - t_max) * ramp_i
+sigma_i    = sigma(t_i)
+sigma_n    = 0
 ```
 
-This distributes steps more evenly across the noise range compared to a
-linear-in-sigma schedule.  Most perceptual detail is determined at mid-to-low
-noise levels (sigma roughly 0.5 to 5.0 for latent-space models), and the
-sigma^(1/rho) interpolation naturally places more resolution in that range.
+where t_max = timestep(sigma_max) and t_min = timestep(sigma_min) are the
+model's native timestep boundaries, and sigma(t) is the model's native
+timestep-to-sigma function.
 
-The exponent rho adapts to the step count automatically, which is the
-self-correcting property that gives the scheduler its name.  When steps are
-few, rho decreases toward 2, spreading the distribution more broadly so that
-every step captures meaningful information.  When steps are many, rho converges
-toward 7 -- the standard Karras value -- concentrating effort on the detail
-range.
+This approach avoids the jagged-edge artifacts that can occur when custom
+sigma-space schedules (Karras, exponential) ask the model to denoise at noise
+levels outside its training distribution.  Because the sigmas always come from
+the model's native sigma function, the model sees only noise levels it was
+trained on.  The only difference from the normal scheduler is which timesteps
+are selected -- the sigma values themselves follow the same training-distribution
+shape.
+
+The exponent rho adapts to the step count automatically:
 
 ```
-steps = 5   -> rho ~ 2.0  (broad coverage)
-steps = 10  -> rho ~ 3.7  (balanced)
-steps = 20  -> rho ~ 7.0  (standard Karras distribution)
-steps = 50  -> rho ~ 7.0  (standard Karras distribution, detail-focused)
+steps = 5   -> rho ~ 1.0  (near-linear timesteps, normal-like)
+steps = 10  -> rho ~ 0.9  (slight detail focus)
+steps = 15  -> rho ~ 0.7  (detail focus)
+steps = 20  -> rho ~ 0.7  (detail focus)
+steps = 50  -> rho ~ 0.7  (detail focus)
 ```
 
-The final zero step is always appended so every sampler sees a well-defined
-end-of-sequence signal.  The adaptation follows the same philosophy as the
-Infinity kernel scheduler's hardware-adaptive alpha: the schedule adjusts
-itself based on the budget it is given.
+At rho = 1 the timesteps are linear, identical to the normal scheduler.  At
+rho < 1 the power ramp concentrates more timesteps at low noise levels where
+perceptual detail is determined, shifting resolution toward the detail range
+while keeping every sigma inside the model's training distribution.
 
 ---
 
@@ -211,22 +221,32 @@ correction).  Setting both to 0 gives pure Euler.  At very high noise levels
 regardless of the sampler — consider using a sigma mask or scheduling alpha
 to ramp up from 0 over the first few steps.
 
-### Linear-in-sigma power ramp wastes steps at high noise
+### Sigma-space schedules cause jagged edges
 
-An earlier version of the infinity scheduler used a formula that interpolated
-linearly in sigma with a power ramp on the position:
+Schedulers that compute sigmas directly in sigma space (Karras, exponential,
+or the earlier sigma^(1/rho) formulation of the infinity scheduler) produce
+sigma values that may not align with the model's training distribution.
+When the model is asked to denoise at noise levels it was never or rarely
+trained on, its predictions become slightly less accurate.  At low noise levels
+where fine details and edges are determined, this inaccuracy manifests as
+jagged or aliased lines.
 
-    sigma_i = sigma_min + (sigma_max - sigma_min) * (1 - (i/n)^rho)
+The effect is most visible on thin, high-contrast features (black outlines
+on anime characters, text, sharp edges).  The model's denoising prediction
+at an unfamiliar noise level produces slightly off pixels, and these errors
+accumulate into visible jaggies.
 
-This produces a schedule that stays near sigma_max for most of the steps and
-only reaches detail-relevant noise levels (sigma < 5.0) in the final few
-iterations.  For example, at rho = 7 and 20 steps, only 2 out of 20 steps
-are below sigma 5.0.  Images generated with this schedule are blurry because
-the model never spends enough steps in the detail-determining range.
+The current infinity scheduler avoids this by distributing timesteps in the
+model's native timestep space and mapping through the model's sigma()
+function.  Every produced sigma is a value the model was trained on.  The
+timestep distribution itself follows a power ramp (the infinity twist), but
+the sigma values always come from the training distribution.
 
-The current implementation uses sigma^(1/rho) interpolation instead, which
-gives a balanced step distribution regardless of rho.  At the self-adaptive
-default, 60-70% of steps fall below sigma 5.0.
+If you use the infinity scheduler in sigma-space mode (standalone, without
+a sigma_fn), the same jagged-edge risk applies, though the sigma^(1/rho)
+distribution is less affected than the original linear-in-sigma formula
+because it concentrates more steps in the detail range where the model's
+predictions are better-behaved.
 
 ### Zero terminal sigma causes division issues
 
@@ -267,7 +287,17 @@ and PyTorch.  No other libraries are required.
 import torch
 from infinity_diffusion import InfinitySampler, InfinityScheduler
 
+# Sigma-space mode (no access to model's native sigma function):
 sigmas = InfinityScheduler(steps=20, sigma_min=0.002, sigma_max=80.0).sigmas
+
+# Timestep-space mode (recommended when sigma_fn is available):
+# sigmas = InfinityScheduler(
+#     steps=20,
+#     sigma_fn=model_sampling.sigma,
+#     timestep_start=999,
+#     timestep_end=0,
+# ).sigmas
+
 x = torch.randn(1, 4, 64, 64) * sigmas[0]
 
 def denoise_fn(x_t, sigma_t):

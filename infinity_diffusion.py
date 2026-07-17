@@ -53,61 +53,109 @@ def _to_d(x: torch.Tensor, sigma: torch.Tensor, denoised: torch.Tensor) -> torch
 
 
 class InfinityScheduler:
-    """Self-adaptive sigma schedule with asymptotic approach to zero.
+    """Self-adaptive sigma schedule.
 
-    Interpolates in sigma^(1/rho) space between sigma_max and sigma_min,
-    following the same approach as Karras et al. (2022).  The exponent rho
-    adapts to the step count so the schedule works well at any resolution:
+    Two distribution modes are supported:
 
-        few steps  (<= 5)   ->  rho ~ 2   (broader distribution)
-        many steps (>= 20)  ->  rho ~ 7   (standard Karras distribution)
+    **Timestep-space mode** (recommended for diffusion models):
+    Distributes timesteps in the model's native timestep space using a power
+    ramp, then maps through the model's sigma() function.  Every produced
+    sigma is an interpolation of the model's native training sigmas.
+    Provide a ``sigma_fn`` callable to use this mode::
 
-    The formula is:
+        def sigma_fn(timesteps):
+            return model_sampling.sigma(timesteps)
 
-        ramp_i   = i / (n-1)
-        sigma_i  = (sigma_max^(1/rho) + ramp_i * (sigma_min^(1/rho) - sigma_max^(1/rho)))^rho
-        sigma_n  = 0
+        sched = InfinityScheduler(steps=20, sigma_fn=sigma_fn)
 
-    When sigma_min or sigma_max is passed as a float, the returned sigmas are
-    CPU tensors.  Pass torch tensors to control the device.
+    **Sigma-space mode** (fallback):
+    Interpolates in sigma^(1/rho) space between sigma_min and sigma_max.
+    Provide ``sigma_min`` and ``sigma_max`` as floats to use this mode.
+
+        sched = InfinityScheduler(steps=20, sigma_min=0.002, sigma_max=80.0)
+
+    The exponent rho adapts to the step count automatically so the schedule
+    works at any resolution without parameter tuning.
 
     Parameters
     ----------
     steps : int
         Number of sampling steps (excluding the final zero).
-    sigma_min : float
-        Minimum noise level (typically 0.002 -- 0.01).
-    sigma_max : float
-        Maximum noise level (typically 80.0 -- 300.0 for pixel-space models,
-        14.6 for latent-space models).
+    sigma_min : float, optional
+        Minimum noise level.  Required in sigma-space mode.
+    sigma_max : float, optional
+        Maximum noise level.  Required in sigma-space mode.
+    sigma_fn : callable, optional
+        ``sigma_fn(timesteps: Tensor) -> Tensor`` for timestep-space mode.
+    rho : float or None, optional
+        Power exponent for the distribution ramp.  None means self-adaptive.
     """
 
-    def __init__(self, steps: int, sigma_min: float, sigma_max: float, rho: float | None = None):
+    def __init__(
+        self,
+        steps: int,
+        sigma_min: float | None = None,
+        sigma_max: float | None = None,
+        sigma_fn=None,
+        timestep_start: float | None = None,
+        timestep_end: float | None = None,
+        rho: float | None = None,
+    ):
         if steps < 1:
             raise ValueError(f"steps must be >= 1, got {steps}")
-        if sigma_min <= 0.0:
-            raise ValueError(f"sigma_min must be positive, got {sigma_min}")
-        if sigma_max <= sigma_min:
-            raise ValueError(f"sigma_max ({sigma_max}) must be > sigma_min ({sigma_min})")
 
         self.steps = steps
-        self.sigma_min = sigma_min
-        self.sigma_max = sigma_max
         self.rho = rho
+
+        if sigma_fn is not None:
+            # Timestep-space mode: use sigma_fn(timesteps) where timesteps
+            # go from timestep_start down to timestep_end.
+            if timestep_start is None or timestep_end is None:
+                raise ValueError("timestep_start and timestep_end required when sigma_fn is given")
+            self.sigma_fn = sigma_fn
+            self._timestep_start = timestep_start
+            self._timestep_end = timestep_end
+            self._sigma_space = False
+            self._sigma_min = None
+            self._sigma_max = None
+        else:
+            # Sigma-space mode: interpolate directly between sigma_min and sigma_max.
+            if sigma_min is None or sigma_max is None:
+                raise ValueError("sigma_min and sigma_max required in sigma-space mode")
+            if sigma_min <= 0.0:
+                raise ValueError(f"sigma_min must be positive, got {sigma_min}")
+            if sigma_max <= sigma_min:
+                raise ValueError(f"sigma_max ({sigma_max}) must be > sigma_min ({sigma_min})")
+            self._sigma_min = sigma_min
+            self._sigma_max = sigma_max
+            self._sigma_space = True
+            self.sigma_fn = None
+            self._timestep_start = None
+            self._timestep_end = None
 
     @property
     def sigmas(self) -> torch.Tensor:
         """Return the sigma schedule as a 1-D float32 tensor of length steps + 1."""
         rho = self.rho
         if rho is None:
-            # Self-adaptive default: at low step counts the distribution
-            # spreads out; at high step counts it converges to the standard
-            # Karras value (rho ~ 7).
-            rho = 2.0 + 5.0 * min(1.0, max(0.0, (self.steps - 5.0) / 15.0))
+            rho = self._default_rho()
 
-        ramp = torch.linspace(0.0, 1.0, self.steps)
-        sigmas = (self.sigma_max ** (1.0 / rho) + ramp * (self.sigma_min ** (1.0 / rho) - self.sigma_max ** (1.0 / rho))) ** rho
+        # ramp in [0, 1]; rho < 1 concentrates near the end (detail focus).
+        ramp = torch.linspace(0.0, 1.0, self.steps) ** rho
+
+        if self._sigma_space:
+            sigmas = (self._sigma_max ** (1.0 / rho) + ramp * (self._sigma_min ** (1.0 / rho) - self._sigma_max ** (1.0 / rho))) ** rho
+        else:
+            timesteps = self._timestep_start + (self._timestep_end - self._timestep_start) * ramp
+            sigmas = self.sigma_fn(timesteps)
+
         return _append_zero(sigmas).float()
+
+    def _default_rho(self) -> float:
+        if self._sigma_space:
+            return 2.0 + 5.0 * min(1.0, max(0.0, (self.steps - 5.0) / 15.0))
+        else:
+            return 0.7 + 0.3 * max(0.0, min(1.0, (15.0 - self.steps) / 10.0))
 
 
 # ---------------------------------------------------------------------------
