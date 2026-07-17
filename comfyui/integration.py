@@ -59,9 +59,9 @@ def sample_infinity(
 def infinity_scheduler(model_sampling, steps: int) -> torch.Tensor:
     """ComfyUI scheduler handler for InfinityScheduler.
 
-    Uses a non-linear timestep distribution that shifts step budget
-    toward the low-sigma detail zone without creating extreme sigma gaps.
-    All produced sigmas are from the model's training distribution.
+    Produces sigma values identical to the normal scheduler but is
+    compatible with all model types (discrete via ModelSamplingDiscrete,
+    continuous via ModelSamplingContinuousEDM, flow matching, etc.).
     """
     start = float(model_sampling.timestep(model_sampling.sigma_max))
     end = float(model_sampling.timestep(model_sampling.sigma_min))
