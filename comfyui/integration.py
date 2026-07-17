@@ -78,8 +78,12 @@ def sample_infinity(
     return x
 
 
-def infinity_scheduler(model_sampling, steps: int, rho: float = 7.0) -> torch.Tensor:
+def infinity_scheduler(model_sampling, steps: int, rho: float | None = None) -> torch.Tensor:
     """ComfyUI scheduler handler for InfinityScheduler.
+
+    When rho is None (the default) the scheduler self-adapts to the step
+    count — broader distribution at low steps, standard Karras-like
+    distribution at high steps.
 
     Parameters
     ----------
@@ -88,8 +92,8 @@ def infinity_scheduler(model_sampling, steps: int, rho: float = 7.0) -> torch.Te
         attributes (float).
     steps : int
         Number of sampling steps.
-    rho : float, optional
-        Power exponent (default 7.0).
+    rho : float or None, optional
+        Power exponent.  None means self-adaptive (default).
 
     Returns
     -------

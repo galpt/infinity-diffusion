@@ -53,19 +53,23 @@ def _to_d(x: torch.Tensor, sigma: torch.Tensor, denoised: torch.Tensor) -> torch
 
 
 class InfinityScheduler:
-    """Power-ramp sigma schedule with asymptotic approach to zero.
+    """Self-adaptive sigma schedule with asymptotic approach to zero.
 
-    Produces sigma values that transition from sigma_max down to sigma_min
-    following the curve:
+    Interpolates in sigma^(1/rho) space between sigma_max and sigma_min,
+    following the same approach as Karras et al. (2022).  The exponent rho
+    adapts to the step count so the schedule works well at any resolution:
 
-        ramp_i  = 1 - (i / (n - 1)) ** rho         i in [0, n - 1]
-        sigma_i = sigma_min + (sigma_max - sigma_min) * ramp_i
-        sigma_n = 0
+        few steps  (<= 5)   ->  rho ~ 2   (broader distribution)
+        many steps (>= 20)  ->  rho ~ 7   (standard Karras distribution)
 
-    The parameter rho controls where steps are concentrated:
-        rho = 1   — linear in sigma (steps concentrated at high noise)
-        rho = 7   — approximates the Karras et al. (2022) distribution
-        rho = 20  — steps concentrated at low noise (fine detail)
+    The formula is:
+
+        ramp_i   = i / (n-1)
+        sigma_i  = (sigma_max^(1/rho) + ramp_i * (sigma_min^(1/rho) - sigma_max^(1/rho)))^rho
+        sigma_n  = 0
+
+    When sigma_min or sigma_max is passed as a float, the returned sigmas are
+    CPU tensors.  Pass torch tensors to control the device.
 
     Parameters
     ----------
@@ -76,19 +80,15 @@ class InfinityScheduler:
     sigma_max : float
         Maximum noise level (typically 80.0 -- 300.0 for pixel-space models,
         14.6 for latent-space models).
-    rho : float, optional
-        Power exponent (default 7.0).
     """
 
-    def __init__(self, steps: int, sigma_min: float, sigma_max: float, rho: float = 7.0):
+    def __init__(self, steps: int, sigma_min: float, sigma_max: float, rho: float | None = None):
         if steps < 1:
             raise ValueError(f"steps must be >= 1, got {steps}")
         if sigma_min <= 0.0:
             raise ValueError(f"sigma_min must be positive, got {sigma_min}")
         if sigma_max <= sigma_min:
             raise ValueError(f"sigma_max ({sigma_max}) must be > sigma_min ({sigma_min})")
-        if rho <= 0.0:
-            raise ValueError(f"rho must be positive, got {rho}")
 
         self.steps = steps
         self.sigma_min = sigma_min
@@ -98,8 +98,15 @@ class InfinityScheduler:
     @property
     def sigmas(self) -> torch.Tensor:
         """Return the sigma schedule as a 1-D float32 tensor of length steps + 1."""
+        rho = self.rho
+        if rho is None:
+            # Self-adaptive default: at low step counts the distribution
+            # spreads out; at high step counts it converges to the standard
+            # Karras value (rho ~ 7).
+            rho = 2.0 + 5.0 * min(1.0, max(0.0, (self.steps - 5.0) / 15.0))
+
         ramp = torch.linspace(0.0, 1.0, self.steps)
-        sigmas = self.sigma_min + (self.sigma_max - self.sigma_min) * (1.0 - ramp ** self.rho)
+        sigmas = (self.sigma_max ** (1.0 / rho) + ramp * (self.sigma_min ** (1.0 / rho) - self.sigma_max ** (1.0 / rho))) ** rho
         return _append_zero(sigmas).float()
 
 

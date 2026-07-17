@@ -42,21 +42,38 @@ are determined in the mid-noise range: early steps block in the broad
 composition; late steps refine edges and texture.  If you waste steps at very
 high or very low noise, you need more total steps for the same quality.
 
-The infinity scheduler distributes steps along a power curve:
+The infinity scheduler interpolates in sigma^(1/rho) space, following the
+same mathematical structure as Karras et al. (2022):
 
 ```
-ramp_i  = 1 - (i / n) ** rho
-sigma_i = sigma_min + (sigma_max - sigma_min) * ramp_i
+ramp_i  = i / (n-1)
+sigma_i = (sigma_max^(1/rho) + ramp_i * (sigma_min^(1/rho) - sigma_max^(1/rho)))^rho
 sigma_n = 0
 ```
 
-At rho = 1 the schedule is linear in sigma.  At rho = 7 (the default) the
-distribution approximates the Karras et al. (2022) schedule.  At rho = 20
-steps cluster near low noise for fine detail work.  There is no lower bound on
-rho, but the useful range for image generation is roughly 2 to 15.
+This distributes steps more evenly across the noise range compared to a
+linear-in-sigma schedule.  Most perceptual detail is determined at mid-to-low
+noise levels (sigma roughly 0.5 to 5.0 for latent-space models), and the
+sigma^(1/rho) interpolation naturally places more resolution in that range.
+
+The exponent rho adapts to the step count automatically, which is the
+self-correcting property that gives the scheduler its name.  When steps are
+few, rho decreases toward 2, spreading the distribution more broadly so that
+every step captures meaningful information.  When steps are many, rho converges
+toward 7 -- the standard Karras value -- concentrating effort on the detail
+range.
+
+```
+steps = 5   -> rho ~ 2.0  (broad coverage)
+steps = 10  -> rho ~ 3.7  (balanced)
+steps = 20  -> rho ~ 7.0  (standard Karras distribution)
+steps = 50  -> rho ~ 7.0  (standard Karras distribution, detail-focused)
+```
 
 The final zero step is always appended so every sampler sees a well-defined
-end-of-sequence signal.
+end-of-sequence signal.  The adaptation follows the same philosophy as the
+Infinity kernel scheduler's hardware-adaptive alpha: the schedule adjusts
+itself based on the budget it is given.
 
 ---
 
@@ -153,16 +170,22 @@ correction).  Setting both to 0 gives pure Euler.  At very high noise levels
 regardless of the sampler — consider using a sigma mask or scheduling alpha
 to ramp up from 0 over the first few steps.
 
-### Schedule provides too few steps in a critical range
+### Linear-in-sigma power ramp wastes steps at high noise
 
-If rho is very high (concentrating steps at low noise), the early steps cover
-a huge sigma range per step and the sampler may skip important structural
-decisions.  Symptoms: composition is incoherent, or faces are poorly formed.
+An earlier version of the infinity scheduler used a formula that interpolated
+linearly in sigma with a power ramp on the position:
 
-**Mitigation**: Reduce rho toward 7 (balanced) or 3 (more early steps).  For
-most diffusion models, rho between 5 and 9 works well.  Very high resolution
-generation (1024x1024 and above) benefits from rho around 8-10 because the
-extra low-noise steps refine texture detail.
+    sigma_i = sigma_min + (sigma_max - sigma_min) * (1 - (i/n)^rho)
+
+This produces a schedule that stays near sigma_max for most of the steps and
+only reaches detail-relevant noise levels (sigma < 5.0) in the final few
+iterations.  For example, at rho = 7 and 20 steps, only 2 out of 20 steps
+are below sigma 5.0.  Images generated with this schedule are blurry because
+the model never spends enough steps in the detail-determining range.
+
+The current implementation uses sigma^(1/rho) interpolation instead, which
+gives a balanced step distribution regardless of rho.  At the self-adaptive
+default, 60-70% of steps fall below sigma 5.0.
 
 ### Zero terminal sigma causes division issues
 
