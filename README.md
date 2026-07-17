@@ -75,9 +75,8 @@ level is from the model's training set &mdash; no jagged edges.
 
 ## Benchmark
 
-Measured on waiMatureIllustrious v2.0 (SDXL) at 512x512, 30 steps, CFG 7.0,
-seed 9500. Negative prompt: *worst quality, low quality, blurry, jpeg
-artifacts, bad anatomy*.
+The Infinity sampler paired with the Infinity scheduler scored highest
+overall.  Directionality (edge cleanness) follows the same ranking.
 
 | Sampler + Scheduler | CSS (higher = cleaner) |
 |---|---|
@@ -85,9 +84,6 @@ artifacts, bad anatomy*.
 | Infinity + normal | 0.0354 |
 | DPM++ 2M + normal | 0.0273 |
 | Euler + normal | 0.0305 |
-
-The Infinity sampler paired with the Infinity scheduler scored highest
-overall.  Directionality (edge cleanness) follows the same ranking.
 
 ## Visual comparison
 
