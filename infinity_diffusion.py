@@ -53,15 +53,16 @@ def _to_d(x: torch.Tensor, sigma: torch.Tensor, denoised: torch.Tensor) -> torch
 
 
 class InfinityScheduler:
-    """Self-adaptive sigma schedule.
+    """Self-adaptive sigma schedule with sine-perturbed timesteps.
 
     Two modes are supported:
 
     **Timestep-space mode** (recommended):
-    Linearly-spaced timesteps mapped through the model's native sigma()
-    function.  Identical to the normal scheduler in behavior.  Every sigma
-    comes from the training distribution, guaranteeing clean lines.
-    Provide ``sigma_fn``, ``timestep_start``, and ``timestep_end``::
+    Applies a smooth sine perturbation to linear timesteps, reducing the
+    first step's sigma gap (gentler start) and increasing the last step's
+    sigma gap (more edge cleanup).  The perturbation strength adapts to
+    the step count automatically.  Provide ``sigma_fn``, ``timestep_start``,
+    and ``timestep_end``::
 
         sched = InfinityScheduler(
             steps=20,
@@ -72,8 +73,7 @@ class InfinityScheduler:
 
     **Sigma-space mode** (fallback, no model access):
     Interpolates in sigma^(1/rho) space between sigma_min and sigma_max.
-    This mode is a reasonable approximation but may produce jagged-edge
-    artifacts on thin lines and high-contrast edges::
+    This mode is a rough approximation that may produce jagged edges::
 
         sched = InfinityScheduler(steps=20, sigma_min=0.002, sigma_max=80.0)
 
@@ -93,7 +93,8 @@ class InfinityScheduler:
         Lowest timestep (maps to sigma_min).  Required with sigma_fn.
     rho : float or None, optional
         Power exponent for sigma-space mode.  None means self-adaptive
-        (default 7.0 for sigma-space, ignored in timestep-space mode).
+        (default 7.0 for sigma-space, ignored in timestep-space mode where
+        the sine perturbation replaces the power ramp).
     """
 
     def __init__(
@@ -144,11 +145,13 @@ class InfinityScheduler:
             ramp = torch.linspace(0.0, 1.0, self.steps)
             sigmas = (self._sigma_max ** (1.0 / rho) + ramp * (self._sigma_min ** (1.0 / rho) - self._sigma_max ** (1.0 / rho))) ** rho
         else:
-            # Linear timesteps through the model's native sigma function,
-            # identical to the normal scheduler.  Using the model's API
-            # instead of hardcoded indices means this works with any
-            # model type (discrete, continuous EDM, flow matching, etc.).
-            timesteps = torch.linspace(self._timestep_start, self._timestep_end, self.steps)
+            # Sine-perturbed timestep distribution.  Redistributes step
+            # budget from the first step toward the last without creating
+            # extreme gaps.  All sigmas come from the model's training set.
+            u = torch.linspace(0.0, 1.0, self.steps)
+            strength = min(1.0, self.steps / 30.0)
+            f = u - strength * (torch.sin(math.pi * u) / math.pi)
+            timesteps = self._timestep_start + (self._timestep_end - self._timestep_start) * f
             sigmas = self.sigma_fn(timesteps)
 
         return _append_zero(sigmas).float()

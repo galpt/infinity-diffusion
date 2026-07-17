@@ -1,33 +1,11 @@
 # Infinity Diffusion
 
-A deterministic first-order ODE solver with EMA-corrected derivative for
-diffusion models.  The sampler tracks the denoising direction change between
-steps and applies a smoothed, damped correction, improving on Euler without
-the instability of higher-order methods.  The scheduler produces the same
-sigma values as the normal scheduler — it is a convenience alias so that
-picking "infinity" for both dropdowns always gives a correctly paired
-sampler and scheduler.
-
-## When to use it
-
-**Detailed scenes.**  The EMA correction keeps refining small details across
-multiple steps without overshooting, which helps when the image has multiple
-subjects competing for attention.
-
-**Batch generation.**  Deterministic output means you can compare prompts
-or models without noise injection confounding the results.
-
-**One setting for everything.**  Pick Infinity for both the sampler and
-scheduler dropdowns, set your step count, and generate.  No need to match
-scheduler to sampler or adjust additional parameters.
-
-When you might prefer something else:
-
-| If you want... | Use... |
-|---|---|
-| Maximum per-step accuracy | DPM++ 2M (may overshoot) |
-| Deterministic, no risk | Infinity sampler |
-| Minimum resource usage | Euler |
+A deterministic first-order ODE solver with EMA-corrected derivative and a
+sine-perturbed timestep scheduler for diffusion models.  The sampler tracks
+the denoising direction change between steps and applies a smoothed, damped
+correction.  The scheduler redistributes step budget from the first step
+toward the last using a smooth sine perturbation, giving the final cleanup
+step more sigma range without introducing jagged edges.
 
 ## Sampler
 
@@ -48,12 +26,52 @@ produces the same output.
 
 ## Scheduler
 
-The Infinity scheduler produces the same sigma values as the normal scheduler
-(linear timesteps through the model's native sigma function).  It is a
-convenience alias so that picking "infinity" for both dropdowns always gives
-a correctly paired sampler and scheduler.
+The common sigma schedules (Karras, exponential) compute sigmas directly in
+sigma space, producing noise levels outside the model's training distribution.
+This causes jagged edges on thin high-contrast features.  The normal scheduler
+uses linear timesteps through the model's native sigma function, avoiding the
+jagged edge problem but wasting the last step on a tiny sigma gap.
 
-## Visual comparison
+The Infinity scheduler uses a sine perturbation to linear timesteps:
+
+```
+f(u) = u - s * sin(pi * u) / pi    u in [0, 1]
+```
+
+At u=0 the derivative is (1 - s): the first step covers less sigma range,
+reducing the initial denoising shock.  At u=1 the derivative is (1 + s): the
+last step covers more sigma range, giving the final cleanup noticeably more
+room.  The strength s adapts to the step count:
+
+| Steps | s | First step gap | Last step gap |
+|---|---|---|---|
+| 10 | 0.33 | 0.67x linear | 1.33x linear |
+| 20 | 0.67 | 0.33x linear | 1.67x linear |
+| 30 | 1.00 | nearly zero | ~2x linear |
+
+All sigmas pass through the model's native sigma function, so every noise
+level is from the model's training set &mdash; no jagged edges.
+
+## When to use it
+
+**Detailed scenes.**  The EMA correction keeps refining small details across
+multiple steps without overshooting, which helps when the image has multiple
+subjects competing for attention.
+
+**Batch generation.**  Deterministic output means you can compare prompts
+or models without noise injection confounding the results.
+
+**Any step count, one setting.**  Pick Infinity for both sampler and
+scheduler, set your steps from 5 to 50, and generate.  The scheduler adapts
+automatically &mdash; near-linear at low steps, sine-perturbed at high steps.
+
+When you might prefer something else:
+
+| If you want... | Use... |
+|---|---|
+| Maximum per-step accuracy | DPM++ 2M (may overshoot) |
+| Deterministic, no risk | Infinity sampler |
+| Minimum resource usage | Euler |
 
 All 9 sampler/scheduler combinations, same model, seed, and prompt
 (waiMatureIllustrious v2.0, SDXL, seed 9000) at 512x512, 30 steps,
