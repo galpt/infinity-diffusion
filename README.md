@@ -63,8 +63,9 @@ API, which works with every model type:
 
 ## Visual comparison
 
-All 9 sampler/scheduler combinations, same seed and model
-(waiMatureIllustrious v2.0, SDXL) at 512x512, 30 steps, CFG 7.0.
+All 9 sampler/scheduler combinations, same model, seed, and prompt
+(waiMatureIllustrious v2.0, SDXL, seed 9000) at 512x512, 30 steps,
+CFG 7.0.
 
 Prompt: *1girl, solo, anime girl, detailed face, detailed eyes, intricate hair,
 sharp black outlines, clean lineart, high contrast, crown, jewelry, lace trim*
