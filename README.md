@@ -16,6 +16,43 @@ to moderate step counts:
 | 20 | +13% |
 | 30 | ~0% (no insertions needed) |
 
+## When to use it
+
+**Detailed scenes.**  The EMA correction keeps refining small details across
+multiple steps without overshooting, which helps when the image has faces,
+hands, textures, and background objects competing for attention.
+
+**Batch generation.**  Deterministic output means you can compare prompts
+or models without noise injection confounding the results.
+
+**Any step count, one setting.**  Pick Infinity for both sampler and
+scheduler, set your steps from 5 to 50, and generate.  The scheduler adapts
+automatically &mdash; near-linear at low steps, sine-perturbed at high steps,
+with the self-correcting loop filling in extra resolution where needed.
+
+## Quick install
+
+Clone the research branch and run the install script:
+
+```bash
+git clone -b research https://github.com/galpt/infinity-diffusion.git
+cd infinity-diffusion
+bash comfy-infinity.sh /path/to/ComfyUI install
+```
+
+Restart ComfyUI.  "Infinity" appears in both the sampler and scheduler
+dropdowns.  The script copies files into `custom_nodes/infinity-diffusion/`
+and modifies nothing inside ComfyUI itself.
+
+Uninstall:
+
+```bash
+bash comfy-infinity.sh /path/to/ComfyUI uninstall
+```
+
+The install script works identically on both the main and research branches
+&mdash; it copies whatever files are in the cloned directory.
+
 ## Sampler
 
 Euler is stable but needs many steps for fine detail.  Higher-order methods
@@ -65,7 +102,7 @@ The self-correcting loop then monitors the sampler's invariants after each
 step.  If either invariant is triggered (correction clamped or direction
 reversal), an intermediate sigma is inserted between the current and next
 step and the step is retried with finer resolution.  This happens
- automatically — no user parameters to tune.
+automatically — no user parameters to tune.
 
 ## Visual comparison (pending)
 
@@ -74,29 +111,6 @@ main branch, will be added once the research branch reaches a stable state.
 The current main branch README has a reference comparison at 832x1216 with
 30 steps and a detailed prompt — the research branch results follow the same
 format but with the self-correcting scheduler active.
-
-## Quick install
-
-Clone the research branch and run the install script:
-
-```bash
-git clone -b research https://github.com/galpt/infinity-diffusion.git
-cd infinity-diffusion
-bash comfy-infinity.sh /path/to/ComfyUI install
-```
-
-Restart ComfyUI.  "Infinity" appears in both the sampler and scheduler
-dropdowns.  The script copies files into `custom_nodes/infinity-diffusion/`
-and modifies nothing inside ComfyUI itself.
-
-Uninstall:
-
-```bash
-bash comfy-infinity.sh /path/to/ComfyUI uninstall
-```
-
-The install script works identically on both the main and research branches —
-it copies whatever files are in the cloned directory.
 
 ## License
 
