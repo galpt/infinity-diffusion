@@ -108,6 +108,8 @@ The Infinity scheduler's native sigma distribution avoids the jagged edges
 visible in Karras-column images, while the sine perturbation gives the
 final cleanup step more budget than the normal scheduler.
 
+If you think this works well for your use cases, please star the repo so others know it is useful.
+
 ## License
 
 MIT License.  See LICENSE.
