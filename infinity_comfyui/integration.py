@@ -51,7 +51,7 @@ def sample_infinity(
     def denoise_fn(x_t, sigma_t):
         return model(x_t, sigma_t * s_in, **extra_args)
 
-    return sampler.sample(denoise_fn, x, sigmas)
+    return sampler.sample(denoise_fn, x, sigmas, callback=callback)
 
 
 def infinity_scheduler(model_sampling, steps: int) -> torch.Tensor:
