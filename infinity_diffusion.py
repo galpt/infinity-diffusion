@@ -228,24 +228,29 @@ class InfinitySampler:
         alpha2 = 0.3
         beta1 = 0.5
         beta2 = 0.3
-        n_steps = sigmas.numel() - 1
         d_prev = None
         d_prev2 = None
         vel = None
         acc = None
 
-        for i in range(n_steps):
-            denoised = denoise_fn(x, sigmas[i].item())
-            d = _to_d(x, sigmas[i], denoised)
+        # Convert to mutable list for dynamic insertion
+        sigmas_list = [sigmas[j].unsqueeze(0) for j in range(sigmas.numel())]
+        i = 0
+
+        while i < len(sigmas_list) - 1:
+            sigma_cur = sigmas_list[i].item()
+            denoised = denoise_fn(x, sigma_cur)
+            d = (x - denoised) / sigmas_list[i]
 
             if callback is not None:
-                callback({"x": x, "i": i, "sigma": sigmas[i], "sigma_hat": sigmas[i], "denoised": denoised})
+                callback({"x": x, "i": i, "sigma": sigmas_list[i], "sigma_hat": sigmas_list[i], "denoised": denoised})
 
             if i == 0:
-                x = x + d * (sigmas[i + 1] - sigmas[i])
+                x = x + d * (sigmas_list[i + 1] - sigmas_list[i])
                 d_prev = d
                 vel = torch.zeros_like(d)
                 acc = torch.zeros_like(d)
+                i += 1
                 continue
 
             # Compute correction
@@ -271,6 +276,13 @@ class InfinitySampler:
             cos_sim = (d * d_prev).sum() / (d.norm() * d_prev.norm() + 1e-8)
             reversed_dir = cos_sim < 0.0
 
+            # Self-correcting scheduler: if an invariant triggered, insert a step
+            # and redo this step for finer resolution.
+            if clamped or reversed_dir:
+                mid = (sigmas_list[i] + sigmas_list[i + 1]) * 0.5
+                sigmas_list.insert(i + 1, mid)
+                continue  # redo `i` with finer resolution
+
             # Fallback: Euler step if both invariants fail
             if clamped and reversed_dir:
                 correction = torch.zeros_like(raw_correction)
@@ -279,9 +291,10 @@ class InfinitySampler:
             else:
                 correction = raw_correction
 
-            x = x + (d + correction) * (sigmas[i + 1] - sigmas[i])
+            x = x + (d + correction) * (sigmas_list[i + 1] - sigmas_list[i])
 
             d_prev2 = d_prev
             d_prev = d
+            i += 1
 
         return x
