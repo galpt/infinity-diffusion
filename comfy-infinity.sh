@@ -86,16 +86,19 @@ elif [[ "$MODE" == "uninstall" ]]; then
         echo "Removed infinity-diffusion custom node from $NODE_DIR"
         echo "Restart ComfyUI to complete uninstall."
     elif is_patched; then
-        echo "infinity-diffusion is installed via file patching (not custom node)."
-        echo "The sampler and scheduler were added directly to ComfyUI's source files."
-        echo ""
-        echo "To remove, restore the original files from git:"
-        echo "  cd $COMFYUI_DIR"
-        echo "  git checkout 72bcdf0^ -- comfy/k_diffusion/sampling.py"
-        echo "  git checkout 72bcdf0^ -- comfy/samplers.py"
-        echo ""
-        echo "This reverts only those two files to before infinity was added,"
-        echo "leaving all your other ComfyUI changes intact."
+        echo "Removing infinity-diffusion from patched files..."
+        cd "$COMFYUI_DIR"
+        # Find the first commit that added infinity code and restore from before it
+        base_commit=$(git log --oneline --diff-filter=A -- comfy/k_diffusion/sampling.py | grep "sample_infinity\|infinity" | tail -1 | awk '{print $1}')
+        if [[ -n "$base_commit" ]]; then
+            git checkout "${base_commit}^" -- comfy/k_diffusion/sampling.py comfy/samplers.py 2>/dev/null
+            echo "Restored comfy/k_diffusion/sampling.py and comfy/samplers.py"
+        else
+            echo "Could not find the originating commit. Restoring manually:"
+            echo "  git checkout 72bcdf0^ -- comfy/k_diffusion/sampling.py"
+            echo "  git checkout 72bcdf0^ -- comfy/samplers.py"
+        fi
+        echo "Restart ComfyUI to complete uninstall."
     else
         echo "infinity-diffusion is not installed."
         exit 0
