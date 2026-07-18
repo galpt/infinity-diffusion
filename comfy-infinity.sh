@@ -89,11 +89,13 @@ elif [[ "$MODE" == "uninstall" ]]; then
         echo "infinity-diffusion is installed via file patching (not custom node)."
         echo "The sampler and scheduler were added directly to ComfyUI's source files."
         echo ""
-        echo "To remove, revert the changes in your ComfyUI directory:"
+        echo "To remove, restore the original files from git:"
         echo "  cd $COMFYUI_DIR"
-        echo "  git checkout comfy/k_diffusion/sampling.py comfy/samplers.py"
+        echo "  git checkout 72bcdf0^ -- comfy/k_diffusion/sampling.py"
+        echo "  git checkout 72bcdf0^ -- comfy/samplers.py"
         echo ""
-        echo "Warning: this reverts ALL changes to those files, not just infinity-diffusion."
+        echo "This reverts only those two files to before infinity was added,"
+        echo "leaving all your other ComfyUI changes intact."
     else
         echo "infinity-diffusion is not installed."
         exit 0
