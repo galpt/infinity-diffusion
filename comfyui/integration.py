@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import torch
 
-from infinity_diffusion.infinity_diffusion import InfinitySampler, InfinityScheduler
+from infinity_diffusion import InfinitySampler, InfinityScheduler
 
 
 __all__ = ["sample_infinity", "infinity_scheduler"]
