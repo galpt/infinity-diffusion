@@ -89,7 +89,7 @@ elif [[ "$MODE" == "uninstall" ]]; then
         echo "Removing infinity-diffusion from patched files..."
         cd "$COMFYUI_DIR"
         # Find the first commit that added infinity code and restore from before it
-        base_commit=$(git log --oneline --diff-filter=A -- comfy/k_diffusion/sampling.py | grep "sample_infinity\|infinity" | tail -1 | awk '{print $1}')
+        base_commit=$(git log --oneline -- comfy/k_diffusion/sampling.py | grep "sample_infinity\|infinity" | tail -1 | awk '{print $1}')
         if [[ -n "$base_commit" ]]; then
             git checkout "${base_commit}^" -- comfy/k_diffusion/sampling.py comfy/samplers.py 2>/dev/null
             echo "Restored comfy/k_diffusion/sampling.py and comfy/samplers.py"
