@@ -65,7 +65,15 @@ The self-correcting loop then monitors the sampler's invariants after each
 step.  If either invariant is triggered (correction clamped or direction
 reversal), an intermediate sigma is inserted between the current and next
 step and the step is retried with finer resolution.  This happens
-automatically — no user parameters to tune.
+ automatically — no user parameters to tune.
+
+## Visual comparison (pending)
+
+Images from a full 9-combo comparison grid at the same seed, similar to the
+main branch, will be added once the research branch reaches a stable state.
+The current main branch README has a reference comparison at 832x1216 with
+30 steps and a detailed prompt — the research branch results follow the same
+format but with the self-correcting scheduler active.
 
 ## Quick install
 
