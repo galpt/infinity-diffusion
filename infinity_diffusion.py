@@ -239,7 +239,7 @@ class InfinitySampler:
             d = _to_d(x, sigmas[i], denoised)
 
             if callback is not None:
-                callback({"x": x, "i": i, "sigma": sigmas[i], "denoised": denoised})
+                callback({"x": x, "i": i, "sigma": sigmas[i], "sigma_hat": sigmas[i], "denoised": denoised})
 
             if i == 0:
                 x = x + d * (sigmas[i + 1] - sigmas[i])
