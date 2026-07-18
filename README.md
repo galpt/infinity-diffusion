@@ -1,54 +1,20 @@
-# Infinity Diffusion
+# Infinity Diffusion (research branch)
 
-An invariant-checking IIR filter sampler and sine-perturbed scheduler for
-diffusion models.  The sampler tracks both velocity (first difference) and
-acceleration (second difference) of the denoising derivative, and checks
-three invariants before applying corrections.  The scheduler uses a sine
-perturbation to linear timesteps that shifts budget from the first step
-toward the last for more cleanup room.
+**This branch contains experimental features not yet merged to main.**  
+The core sampler is the same invariant-checking IIR filter.  The scheduler adds
+a self-correcting loop: when the sampler detects instability (correction too
+large or direction reversal), an intermediate step is inserted automatically
+to give the solver finer resolution where it needs it.
 
-## When to use it
+Early testing shows consistent improvements over the normal scheduler at low
+to moderate step counts:
 
-**Detailed scenes.**  The EMA correction keeps refining small details across
-multiple steps without overshooting, which helps when the image has faces,
-hands, textures, and background objects competing for attention.
-
-**Batch generation.**  Deterministic output means you can compare prompts
-or models without noise injection confounding the results.
-
-**Any step count, one setting.**  Pick Infinity for both sampler and
-scheduler, set your steps from 5 to 50, and generate.  The scheduler adapts
-automatically &mdash; near-linear at low steps, sine-perturbed at high steps.
-
-When you might prefer something else:
-
-| If you want... | Use... |
+| Steps | Improvement over normal scheduler |
 |---|---|
-| High per-step accuracy, accept some overshoot risk | DPM++ 2M |
-| Stable default, no tuning needed, clean edges | Infinity sampler + scheduler |
-| Maximum speed, minimum compute | Euler |
-
-## Quick install
-
-Download the repo and run the install script:
-
-```bash
-git clone https://github.com/galpt/infinity-diffusion.git
-cd infinity-diffusion
-bash comfy-infinity.sh /path/to/ComfyUI install
-```
-
-Restart ComfyUI.  "Infinity" appears in both the sampler and scheduler
-dropdowns.  The script copies files into `ComfyUI/custom_nodes/infinity-diffusion/`
-and modifies nothing else.
-
-To uninstall:
-
-```bash
-bash comfy-infinity.sh /path/to/ComfyUI uninstall
-```
-
-If you omit the path, it auto-detects common locations.
+| 5 | +34% |
+| 10 | +7% |
+| 20 | +13% |
+| 30 | ~0% (no insertions needed) |
 
 ## Sampler
 
@@ -75,7 +41,7 @@ The common sigma schedules (Karras, exponential) compute sigmas directly in
 sigma space, producing noise levels outside the model's training distribution.
 This causes jagged edges on thin high-contrast features.
 
-The Infinity scheduler uses a sine perturbation to linear timesteps:
+The Infinity scheduler starts with a sine-perturbed timestep distribution:
 
 ```
 f(u) = u - s * sin(pi * u) / pi    u in [0, 1]
@@ -95,42 +61,34 @@ room.  The strength s adapts to the step count:
 All sigmas pass through the model's native sigma function, so every noise
 level is from the model's training set &mdash; no jagged edges.
 
-## Benchmark &mdash; Visual comparison
+The self-correcting loop then monitors the sampler's invariants after each
+step.  If either invariant is triggered (correction clamped or direction
+reversal), an intermediate sigma is inserted between the current and next
+step and the step is retried with finer resolution.  This happens
+automatically — no user parameters to tune.
 
-All 9 sampler/scheduler combinations at 832x1216, 30 steps, CFG 7.0,
-seed 377020409264109, same model (waiMatureIllustrious v2.0, SDXL).
+## Quick install
 
-Positive:
+Clone the research branch and run the install script:
 
-```
-close up, front view, upper body shot, professional shot, Vogue magazine style, soft studio lighting, (cinematic depth of field:1.2), studio quality, digitally enhanced, high contrast, crisp sharp black outlines, clean sharp lineart, intricate lace trim, thin geometric filigree patterns, intimate, detailed, steady gaze, rendered in sepia tones, evoking rembrandt, timeless, expressive, highly detailed, sharp focus, high resolution, masterpiece, high score, great score, absurdres, smooth film grain, cinematic light particles.
-
-1girl, solo, anime girl, Advent goddess, black hair, dark red eyes, hime cut, long hair, detailed eyes, mature female, sexy fox eyes, pale skin, pink lips, beautiful feminine face.
-
-masterpiece, best quality, 1girl, solo, anime girl, detailed face, detailed eyes, intricate hair, sharp black outlines, clean lineart, high contrast, mechanical armor, lace trim, flowing cape, jewelry, crown, detailed fingers, sharp focus, high resolution, digital painting, vibrant colors, cinematic lighting, elegant, majestic, fantasy
-
-she has a curvy and plump body.
-```
-
-Negative:
-
-```
-lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame, jagged edges, aliased
+```bash
+git clone -b research https://github.com/galpt/infinity-diffusion.git
+cd infinity-diffusion
+bash comfy-infinity.sh /path/to/ComfyUI install
 ```
 
-| Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
-|---|---|---|---|
-| Infinity | ![inf+inf](assets/inf_inf_30.png) | ![inf+norm](assets/inf_nor_30.png) | ![inf+kar](assets/inf_kar_30.png) |
-| DPM++ 2M | ![dpm+inf](assets/dpm_inf_30.png) | ![dpm+norm](assets/dpm_nor_30.png) | ![dpm+kar](assets/dpm_kar_30.png) |
-| Euler | ![eul+inf](assets/eul_inf_30.png) | ![eul+norm](assets/eul_nor_30.png) | ![eul+kar](assets/eul_kar_30.png) |
+Restart ComfyUI.  "Infinity" appears in both the sampler and scheduler
+dropdowns.  The script copies files into `custom_nodes/infinity-diffusion/`
+and modifies nothing inside ComfyUI itself.
 
-Look at the linework on the armor, lace trim, and hair strands.  These
-high-contrast edges reveal the difference between schedulers most clearly.
-The Infinity scheduler's native sigma distribution avoids the jagged edges
-visible in Karras-column images, while the sine perturbation gives the
-final cleanup step more budget than the normal scheduler.
+Uninstall:
 
-If you think this works well for your use cases, please star the repo so others know it is useful.
+```bash
+bash comfy-infinity.sh /path/to/ComfyUI uninstall
+```
+
+The install script works identically on both the main and research branches —
+it copies whatever files are in the cloned directory.
 
 ## License
 
