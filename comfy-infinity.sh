@@ -50,10 +50,18 @@ fi
 
 NODE_DIR="$COMFYUI_DIR/custom_nodes/infinity-diffusion"
 
+# Detect whether infinity is already installed via patched files (older method).
+# Check if the keyword appears in ComfyUI's built-in files.
+is_patched() {
+    grep -q "sample_infinity" "$COMFYUI_DIR/comfy/k_diffusion/sampling.py" 2>/dev/null || return 1
+    grep -q "infinity_scheduler" "$COMFYUI_DIR/comfy/samplers.py" 2>/dev/null || return 1
+    return 0
+}
+
 # ── Install ──────────────────────────────────────────────────────────────────
 if [[ "$MODE" == "install" ]]; then
     if [[ -d "$NODE_DIR" ]]; then
-        echo "infinity-diffusion already installed at $NODE_DIR"
+        echo "infinity-diffusion is already installed at $NODE_DIR"
         echo "Run '$0 $COMFYUI_DIR uninstall' first to reinstall"
         exit 0
     fi
@@ -73,13 +81,23 @@ if [[ "$MODE" == "install" ]]; then
 
 # ── Uninstall ────────────────────────────────────────────────────────────────
 elif [[ "$MODE" == "uninstall" ]]; then
-    if [[ ! -d "$NODE_DIR" ]]; then
+    if [[ -d "$NODE_DIR" ]]; then
+        rm -rf "$NODE_DIR"
+        echo "Removed infinity-diffusion custom node from $NODE_DIR"
+        echo "Restart ComfyUI to complete uninstall."
+    elif is_patched; then
+        echo "infinity-diffusion is installed via file patching (not custom node)."
+        echo "The sampler and scheduler were added directly to ComfyUI's source files."
+        echo ""
+        echo "To remove, revert the changes in your ComfyUI directory:"
+        echo "  cd $COMFYUI_DIR"
+        echo "  git checkout comfy/k_diffusion/sampling.py comfy/samplers.py"
+        echo ""
+        echo "Warning: this reverts ALL changes to those files, not just infinity-diffusion."
+    else
         echo "infinity-diffusion is not installed."
         exit 0
     fi
-    rm -rf "$NODE_DIR"
-    echo "Removed infinity-diffusion from $NODE_DIR"
-    echo "Restart ComfyUI to complete uninstall."
 
 else
     echo "Unknown mode: $MODE  (use install or uninstall)"
