@@ -66,12 +66,12 @@ if [[ "$MODE" == "install" ]]; then
         exit 0
     fi
 
-    mkdir -p "$NODE_DIR/comfyui"
+    mkdir -p "$NODE_DIR/infinity_comfyui"
 
     # Copy core module and adapter
     cp "$SCRIPT_DIR/infinity_diffusion.py" "$NODE_DIR/"
-    cp "$SCRIPT_DIR/comfyui/__init__.py" "$NODE_DIR/comfyui/"
-    cp "$SCRIPT_DIR/comfyui/integration.py" "$NODE_DIR/comfyui/"
+    cp "$SCRIPT_DIR/infinity_comfyui/__init__.py" "$NODE_DIR/infinity_comfyui/"
+    cp "$SCRIPT_DIR/infinity_comfyui/integration.py" "$NODE_DIR/infinity_comfyui/"
 
     # Copy registration entry point
     cp "$SCRIPT_DIR/custom_node/__init__.py" "$NODE_DIR/__init__.py"

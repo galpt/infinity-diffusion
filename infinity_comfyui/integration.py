@@ -9,13 +9,13 @@ Usage
 -----
     # In ComfyUI's comfy/k_diffusion/sampling.py:
 
-        from infinity_diffusion.comfyui.integration import sample_infinity
+        from infinity_comfyui.integration import sample_infinity
 
     # Then add "infinity" to KSAMPLER_NAMES in comfy/samplers.py.
 
     # In comfy/samplers.py:
 
-        from infinity_diffusion.comfyui.integration import infinity_scheduler
+        from infinity_comfyui.integration import infinity_scheduler
         SCHEDULER_HANDLERS["infinity"] = SchedulerHandler(infinity_scheduler)
 """
 

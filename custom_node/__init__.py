@@ -11,7 +11,7 @@ import comfy.k_diffusion.sampling as k_sampling
 import comfy.samplers as samplers
 from comfy.samplers import SchedulerHandler
 
-from comfyui.integration import sample_infinity, infinity_scheduler
+from infinity_comfyui.integration import sample_infinity, infinity_scheduler
 
 k_sampling.sample_infinity = sample_infinity
 samplers.KSAMPLER_NAMES.append("infinity")
