@@ -14,7 +14,13 @@ from comfy.samplers import SchedulerHandler
 from infinity_comfyui.integration import sample_infinity, infinity_scheduler
 
 k_sampling.sample_infinity = sample_infinity
-samplers.KSAMPLER_NAMES.append("infinity")
+
+# SAMPLER_NAMES / SCHEDULER_NAMES were created via list() / + at import time,
+# so we must append to the live list that KSampler.SAMPLERS/SCHEDULERS reference.
+if "infinity" not in samplers.SAMPLER_NAMES:
+    samplers.SAMPLER_NAMES.append("infinity")
+if "infinity" not in samplers.SCHEDULER_NAMES:
+    samplers.SCHEDULER_NAMES.append("infinity")
 samplers.SCHEDULER_HANDLERS["infinity"] = SchedulerHandler(infinity_scheduler)
 
 print("# Registered infinity sampler and scheduler")
