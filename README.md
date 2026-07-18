@@ -28,6 +28,28 @@ When you might prefer something else:
 | Stable default, no tuning needed, clean edges | Infinity sampler + scheduler |
 | Maximum speed, minimum compute | Euler |
 
+## Quick install
+
+Download the repo and run the install script:
+
+```bash
+git clone https://github.com/galpt/infinity-diffusion.git
+cd infinity-diffusion
+bash comfy-infinity.sh /path/to/ComfyUI install
+```
+
+Restart ComfyUI.  "Infinity" appears in both the sampler and scheduler
+dropdowns.  The script copies files into `ComfyUI/custom_nodes/infinity-diffusion/`
+and modifies nothing else.
+
+To uninstall:
+
+```bash
+bash comfy-infinity.sh /path/to/ComfyUI uninstall
+```
+
+If you omit the path, it auto-detects common locations.
+
 ## Sampler
 
 Euler is stable but needs many steps for fine detail.  Higher-order methods
