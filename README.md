@@ -143,7 +143,7 @@ $$ CSS = \frac{gradient \cdot directionality}{HF + 0.01} $$
 
 Where:
 - **gradient** = mean of horizontal and vertical pixel differences
-- **directionality** = $\lvert gradient_x - gradient_y \rvert \;/\; (gradient_x + gradient_y)$
+- **directionality** = $\lvert gradient_x - gradient_y \rvert / (gradient_x + gradient_y)$
 - **HF energy** = fraction of the image's frequency-spectrum energy that lies in the outer 50 % of the Fourier domain, capturing fine details, texture, and high-frequency noise
 
 $$ \text{Improvement} = \frac{CSS_{inf} - CSS_{normal}}{CSS_{normal}} \times 100 \% $$
