@@ -247,7 +247,8 @@ class InfinitySampler:
             if callback is not None:
                 callback({"x": x, "i": i, "sigma": s_cur, "sigma_hat": s_cur, "denoised": denoised})
 
-            # Bootstrap step: uncorrected exponential integrator
+            # Bootstrap step: exponential integrator (DPM-Solver, Lu et al. 2022)
+            # https://arxiv.org/abs/2206.00927
             if i == 0:
                 ratio = s_next / s_cur
                 x = ratio * x - (ratio - 1) * denoised
@@ -294,7 +295,9 @@ class InfinitySampler:
             else:
                 correction = raw_correction
 
-            # Exponential integrator (DPM-Solver style) in denoised space
+            # Exponential integrator (DPM-Solver / DPM-Solver++, Lu et al. 2022)
+            # https://arxiv.org/abs/2206.00927  |  https://arxiv.org/abs/2211.01095
+            # Extended with infinity EMA correction and invariant checking.
             ratio = s_next / s_cur
             denoised_corrected = denoised + correction
             x = ratio * x - (ratio - 1) * denoised_corrected
