@@ -6,16 +6,6 @@ a self-correcting loop: when the sampler detects instability (correction too
 large or direction reversal), an intermediate step is inserted automatically
 to give the solver finer resolution where it needs it.
 
-Early testing shows consistent improvements over the normal scheduler at low
-to moderate step counts:
-
-| Steps | Improvement over normal scheduler |
-|---|---|
-| 5 | +34% |
-| 10 | +7% |
-| 20 | +13% |
-| 30 | ~0% (no insertions needed) |
-
 ## When to use it
 
 **Detailed scenes.**  The EMA correction keeps refining small details across
@@ -104,13 +94,60 @@ reversal), an intermediate sigma is inserted between the current and next
 step and the step is retried with finer resolution.  This happens
 automatically — no user parameters to tune.
 
-## Visual comparison (pending)
+## Benchmark and visual comparison
 
-Images from a full 9-combo comparison grid at the same seed, similar to the
-main branch, will be added once the research branch reaches a stable state.
-The current main branch README has a reference comparison at 832x1216 with
-30 steps and a detailed prompt — the research branch results follow the same
-format but with the self-correcting scheduler active.
+All 9 sampler/scheduler combinations at 1216x832 landscape, 30 steps, CFG
+6.0, seed 56100400462260, same model (waiMatureIllustrious v2.0, SDXL).
+
+Positive:
+
+```
+close up, side view, upper body shot, Vogue magazine style, soft studio lighting, (cinematic depth of field:1.2), studio quality, digitally enhanced, crisp sharp black outlines, clean sharp lineart, thin geometric filigree patterns, intimate, detailed, steady gaze, rendered in sepia tones, evoking rembrandt, timeless, expressive, highly detailed, sharp focus, high resolution, masterpiece, high score, great score, absurdres, smooth film grain, cinematic light particles.
+
+1girl, solo, black hair, individual hair strands, fine hair texture, strands of hair, wispy flyaways, intricate hair details, dark red eyes, hime cut, long hair, mature female, sexy fox eyes, fair skin, beautiful feminine face.
+
+white hooded goddess silk robe, hood up, intricate lace trim, elegant, majestic, fantasy, ethereal, sacred.
+
+she has a curvy body.
+profile picture.
+
+parted lips, heavy breathing.
+looking at viewer.
+```
+
+Negative:
+
+```
+lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame, jagged edges, aliased
+```
+
+| Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
+|---|---|---|---|
+| Infinity | ![inf+inf](assets/inf_inf_30.png) | ![inf+norm](assets/inf_nor_30.png) | ![inf+kar](assets/inf_kar_30.png) |
+| DPM++ 2M | ![dpm+inf](assets/dpm_inf_30.png) | ![dpm+norm](assets/dpm_nor_30.png) | ![dpm+kar](assets/dpm_kar_30.png) |
+| Euler | ![eul+inf](assets/eul_inf_30.png) | ![eul+norm](assets/eul_nor_30.png) | ![eul+kar](assets/eul_kar_30.png) |
+
+Early testing shows consistent improvements over the normal scheduler at low
+to moderate step counts:
+
+| Steps | Improvement over normal scheduler |
+|---|---|
+| 5 | +34% |
+| 10 | +7% |
+| 20 | +13% |
+| 30 | ~0% (no insertions needed) |
+
+---
+
+At first glance the differences between schedules may appear trivial, and it
+would be easy to dismiss the project entirely on that basis.  The value,
+however, is not in the visual comparison itself but in the concept it
+represents: a self-correcting numerical method whose stability bounds can be
+proven mathematically.  Building on this foundation, future work may extend
+the same invariant-checking approach to other components of the diffusion
+pipeline, including the scheduler itself.  The images above merely confirm
+that the approach does not degrade quality while its corrections remain
+dormant.
 
 ## License
 
