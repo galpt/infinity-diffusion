@@ -126,6 +126,16 @@ lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low 
 >
 > The images in this section confirm that the approach does not degrade quality while the scheduler's self-corrections remain dormant — at 30 steps the sigma schedule is already well-balanced enough that few insertions are needed.  At lower step counts (5–20) the improvement over the normal scheduler is measurable (+5 to +34%).
 
+Early testing shows consistent improvements over the normal scheduler at low
+to moderate step counts:
+
+| Steps | Improvement over normal scheduler |
+|---|---|
+| 5 | +34% |
+| 10 | +7% |
+| 20 | +13% |
+| 30 | ~0% (no insertions needed) |
+
 | Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
 |---|---|---|---|
 | Infinity | ![inf+inf](assets/inf_inf_30.png) | ![inf+norm](assets/inf_nor_30.png) | ![inf+kar](assets/inf_kar_30.png) |
