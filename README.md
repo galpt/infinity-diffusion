@@ -121,11 +121,6 @@ Negative prompt:
 lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame, jagged edges, aliased
 ```
 
-> [!NOTE]
-> At first glance the differences between the nine images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents: a self-correcting sampler whose stability bounds can be proven mathematically, paired with a scheduler that dynamically inserts intermediate steps when the sampler's invariants are triggered.
->
-> The images in this section confirm that the approach does not degrade quality while the scheduler's self-corrections remain dormant — at 30 steps the sigma schedule is already well-balanced enough that few insertions are needed.  At lower step counts (5–20) the improvement over the normal scheduler is measurable (+5 to +34%).
-
 Early testing shows consistent improvements over the normal scheduler at low
 to moderate step counts:
 
@@ -141,6 +136,11 @@ to moderate step counts:
 | Infinity | ![inf+inf](assets/inf_inf_30.png) | ![inf+norm](assets/inf_nor_30.png) | ![inf+kar](assets/inf_kar_30.png) |
 | DPM++ 2M | ![dpm+inf](assets/dpm_inf_30.png) | ![dpm+norm](assets/dpm_nor_30.png) | ![dpm+kar](assets/dpm_kar_30.png) |
 | Euler | ![eul+inf](assets/eul_inf_30.png) | ![eul+norm](assets/eul_nor_30.png) | ![eul+kar](assets/eul_kar_30.png) |
+
+> [!NOTE]
+> At first glance the differences between the nine images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents: a self-correcting sampler whose stability bounds can be proven mathematically, paired with a scheduler that dynamically inserts intermediate steps when the sampler's invariants are triggered.
+>
+> The images in this section confirm that the approach does not degrade quality while the scheduler's self-corrections remain dormant — at 30 steps the sigma schedule is already well-balanced enough that few insertions are needed.  At lower step counts (5–20) the improvement over the normal scheduler is measurable (+5 to +34%).
 
 ## License
 
