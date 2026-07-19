@@ -146,7 +146,7 @@ Where:
 - **directionality** = $|\text{gradient}_x - \text{gradient}_y| \;/\; (\text{gradient}_x + \text{gradient}_y)$
 - **HF energy** = ratio of energy in the outer 50 % of the frequency spectrum
 
-The improvement is $(\text{CSS}_\text{inf} - \text{CSS}_\text{normal}) \;/\; \text{CSS}_\text{normal} \times 100$,
+$$ \text{Improvement} = \frac{\text{CSS}_{\text{inf}} - \text{CSS}_{\text{normal}}}{\text{CSS}_{\text{normal}}} \times 100 $$
 where both schedules are paired with the Infinity sampler (same seed, model,
 and prompt) so only the scheduler varies.
 
