@@ -4,7 +4,7 @@
 > This branch contains experimental features not yet merged to main.
 
 The core sampler is the same invariant-checking IIR filter.  The scheduler adds
-a self-correcting loop: when the sampler detects instability (correction too
+a self-correcting loop, that is when the sampler detects instability (correction too
 large or direction reversal), an intermediate step is inserted automatically
 to give the solver finer resolution where it needs it.
 
