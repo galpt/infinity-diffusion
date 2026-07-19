@@ -139,16 +139,14 @@ The percentages are computed from the **Clean Sharpness Score (CSS)** &mdash; a
 combined metric that rewards sharp edges (high gradient) and clean oriented
 edges (high directionality) while penalizing high-frequency noise:
 
-```
-CSS = gradient &times; directionality / (HF_energy + 0.01)
-```
+$$ \text{CSS} = \frac{\text{gradient} \cdot \text{directionality}}{\text{HF\_energy} + 0.01} $$
 
 Where:
 - **gradient** = mean of horizontal and vertical pixel differences
-- **directionality** = |gradient_x &minus; gradient_y| / (gradient_x + gradient_y)
-- **HF_energy** = ratio of energy in the outer 50% of the frequency spectrum
+- **directionality** = $|\text{gradient}_x - \text{gradient}_y| \;/\; (\text{gradient}_x + \text{gradient}_y)$
+- **HF\_energy** = ratio of energy in the outer 50 % of the frequency spectrum
 
-The improvement is `(CSS_inf &minus; CSS_normal) / CSS_normal &times; 100`,
+The improvement is $(\text{CSS}_\text{inf} - \text{CSS}_\text{normal}) \;/\; \text{CSS}_\text{normal} \times 100$,
 where both schedules are paired with the Infinity sampler (same seed, model,
 and prompt) so only the scheduler varies.
 
