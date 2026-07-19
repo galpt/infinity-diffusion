@@ -1,10 +1,10 @@
 """
-infinity_diffusion.py — Self-balancing invariant-checking sampler for diffusion models.
+infinity_diffusion.py — Exponential-integrator sampler for diffusion models.
 
 Provides two components:
 
-  - InfinitySampler   — IIR filter sampler with velocity/acceleration EMA
-                        and invariant-based correction clamping
+  - InfinitySampler   — DPM-Solver-style exponential integrator with
+                        x0-space EMA correction and invariant checking
   - InfinityScheduler — sine-perturbed sigma schedule with adaptive strength
 
 Both are framework-agnostic: they accept and return plain torch Tensors and
@@ -162,25 +162,25 @@ class InfinityScheduler:
 
 
 class InfinitySampler:
-    """Self-balancing invariant-checking sampler (Infinity).
+    """Exponential-integrator sampler with x0-space EMA correction (Infinity).
 
-    The first step uses an Euler bootstrap.  Subsequent steps apply a combined
-    first-order (velocity) and second-order (acceleration) EMA correction to
-    the ODE derivative.
+    Follows the DPM-Solver++ (2M) exponential integrator formulation in
+    denoised-prediction (x0) space, extended with the infinity sampler's
+    self-correcting EMA and invariant checking:
 
-    Before applying the correction, three invariants are checked:
-      1.  Correction magnitude must not exceed 50% of the derivative.
-      2.  If the derivative reversed direction, the correction is halved.
-      3.  If both invariants are violated, the correction is zeroed
-          (pure Euler step).
+        1.  Corrected denoised prediction via velocity + acceleration EMA.
+        2.  Clamp correction at 50 % of the denoised signal magnitude.
+        3.  Halve correction if the denoised direction reversed.
+        4.  Zero correction if both invariants are violated (plain exponential
+            integrator step).
+        5.  Insert an intermediate sigma when invariants trigger (self-correcting
+            scheduler).
 
-    Most steps pass all invariants — the checking is nearly free.
-    When invariants hold, the full second-order correction is applied.
+        x_{i+1}  = (sigma_{i+1} / sigma_i) * x_i - (sigma_{i+1} / sigma_i - 1) * denoised_corrected
 
-        d_i       = (x_i - f(x_i, sigma_i)) / sigma_i
-        vel_i     = (1 - a1) * vel_{i-1} + a1 * (d_i - d_{i-1})
-        acc_i     = (1 - a2) * acc_{i-1} + a2 * (d_i - 2d_{i-1} + d_{i-2})
-        x_{i+1}   = x_i + h_i * (d_i + b1 * vel_i + b2 * acc_i)
+    The exponential integrator delivers sharper, more realistic detail than
+    the Euler-step formulation used in the main and research branches, while
+    the invariants keep the correction stable on erratic trajectories.
     """
 
     def __init__(self):
@@ -236,71 +236,71 @@ class InfinitySampler:
         vel = None
         acc = None
 
-        # Convert to mutable list for dynamic insertion
         sigmas_list = [sigmas[j].unsqueeze(0) for j in range(sigmas.numel())]
         i = 0
 
         while i < len(sigmas_list) - 1:
-            sigma_cur = sigmas_list[i].item()
-            denoised = denoise_fn(x, sigma_cur)
-            d = (x - denoised) / sigmas_list[i]
+            s_cur = sigmas_list[i]
+            s_next = sigmas_list[i + 1]
+            denoised = denoise_fn(x, s_cur.item())
 
             if callback is not None:
-                callback({"x": x, "i": i, "sigma": sigmas_list[i], "sigma_hat": sigmas_list[i], "denoised": denoised})
+                callback({"x": x, "i": i, "sigma": s_cur, "sigma_hat": s_cur, "denoised": denoised})
 
+            # Bootstrap step: uncorrected exponential integrator
             if i == 0:
-                x = x + d * (sigmas_list[i + 1] - sigmas_list[i])
-                d_prev = d
-                vel = torch.zeros_like(d)
-                acc = torch.zeros_like(d)
+                ratio = s_next / s_cur
+                x = ratio * x - (ratio - 1) * denoised
+                d_prev = denoised
+                vel = torch.zeros_like(denoised)
+                acc = torch.zeros_like(denoised)
                 i += 1
                 continue
 
-            # Compute correction
+            # EMA correction on denoised prediction (x0) space
+            delta = denoised - d_prev
             if i == 1:
-                delta = d - d_prev
                 vel = (1.0 - alpha1) * vel + alpha1 * delta
                 raw_correction = beta1 * vel
             else:
-                delta = d - d_prev
                 delta_prev = d_prev - d_prev2
                 vel = (1.0 - alpha1) * vel + alpha1 * delta
                 acc = (1.0 - alpha2) * acc + alpha2 * (delta - delta_prev)
                 raw_correction = beta1 * vel + beta2 * acc
 
-            # Invariant: correction must not exceed 50% of derivative
-            d_mag = d.abs().mean() + 1e-8
+            # Invariant: correction must not exceed 50 % of the denoised signal
+            d_mag = denoised.abs().mean() + 1e-8
             c_mag = raw_correction.abs().mean()
             clamped = c_mag > 0.5 * d_mag
             if clamped:
                 raw_correction = raw_correction * (0.5 * d_mag / c_mag)
 
-            # Invariant: derivative direction should not reverse sharply
-            cos_sim = (d * d_prev).sum() / (d.norm() * d_prev.norm() + 1e-8)
+            # Invariant: denoised direction should not reverse sharply
+            cos_sim = (denoised * d_prev).sum() / (denoised.norm() * d_prev.norm() + 1e-8)
             reversed_dir = cos_sim < 0.0
 
-            # Self-correcting scheduler: if an invariant triggered, insert a step
-            # and redo this step for finer resolution.  The gap check prevents
-            # infinite loops when the step is already too small to split further.
+            # Self-correcting scheduler
             if (clamped or reversed_dir) and i < len(sigmas_list) - 1:
-                current_gap = (sigmas_list[i] - sigmas_list[i + 1]).abs().item()
+                current_gap = (s_cur - s_next).abs().item()
                 if current_gap > 1e-6:
-                    mid = (sigmas_list[i] + sigmas_list[i + 1]) * 0.5
-                    sigmas_list.insert(i + 1, mid)
+                    sigmas_list.insert(i + 1, (s_cur + s_next) * 0.5)
                     continue
 
-            # Fallback: Euler step if both invariants fail
+            # Fallback
             if clamped and reversed_dir:
                 correction = torch.zeros_like(raw_correction)
-            elif inv_reversed:
+            elif reversed_dir:
                 correction = raw_correction * 0.5
             else:
                 correction = raw_correction
 
-            x = x + (d + correction) * (sigmas_list[i + 1] - sigmas_list[i])
+            # Exponential integrator (DPM-Solver style) in denoised space
+            ratio = s_next / s_cur
+            denoised_corrected = denoised + correction
+            x = ratio * x - (ratio - 1) * denoised_corrected
 
             d_prev2 = d_prev
-            d_prev = d
+            d_prev = denoised
             i += 1
 
         return x
