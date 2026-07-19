@@ -1,6 +1,8 @@
 # Infinity Diffusion (research branch)
 
-**This branch contains experimental features not yet merged to main.**  
+> [!NOTE]
+> This branch contains experimental features not yet merged to main.
+
 The core sampler is the same invariant-checking IIR filter.  The scheduler adds
 a self-correcting loop: when the sampler detects instability (correction too
 large or direction reversal), an intermediate step is inserted automatically
@@ -130,6 +132,35 @@ to moderate step counts:
 | 10 | +7% |
 | 20 | +13% |
 | 30 | ~0% (no insertions needed) |
+
+### How to reproduce the numbers
+
+The percentages are computed from the **Clean Sharpness Score (CSS)** &mdash; a
+combined metric that rewards sharp edges (high gradient) and clean oriented
+edges (high directionality) while penalizing high-frequency noise:
+
+```
+CSS = gradient &times; directionality / (HF_energy + 0.01)
+```
+
+Where:
+- **gradient** = mean of horizontal and vertical pixel differences
+- **directionality** = |gradient_x &minus; gradient_y| / (gradient_x + gradient_y)
+- **HF_energy** = ratio of energy in the outer 50% of the frequency spectrum
+
+The improvement is `(CSS_inf &minus; CSS_normal) / CSS_normal &times; 100`,
+where both schedules are paired with the Infinity sampler (same seed, model,
+and prompt) so only the scheduler varies.
+
+Most CSS variation comes from the seed and prompt rather than the
+sampler/scheduler.  A single run can shift 20&ndash;30%.  The table above was
+measured at seed 3311874133078797565 on waiMatureIllustrious v2.0 (SDXL) at
+512x512, 30 steps, CFG 7.0, using the Advent goddess prompt from the main
+branch benchmark.  The margins are consistent across several seeds at low step
+counts (5&ndash;20) but converge toward zero at 30 steps where the schedule is
+already well-balanced.
+
+### Visual comparison
 
 | Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
 |---|---|---|---|
