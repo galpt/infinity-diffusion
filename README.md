@@ -146,7 +146,7 @@ Where:
 - **directionality** = $\lvert gradient_x - gradient_y \rvert / (gradient_x + gradient_y)$
 - **HF energy** = fraction of the image's frequency-spectrum energy that lies in the outer 50 % of the Fourier domain, capturing fine details, texture, and high-frequency noise
 
-$$ \text{Improvement} = \frac{CSS_{inf} - CSS_{normal}}{CSS_{normal}} \times 100 \% $$
+$$ \text{Improvement} = \frac{CSS_{infinity} - CSS_{normal}}{CSS_{normal}} \times 100 \% $$
 
 where both schedules are paired with the Infinity sampler (same seed, model,
 and prompt) so only the scheduler varies.
