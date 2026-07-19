@@ -138,7 +138,7 @@ to moderate step counts:
 | Euler | ![eul+inf](assets/eul_inf_30.png) | ![eul+norm](assets/eul_nor_30.png) | ![eul+kar](assets/eul_kar_30.png) |
 
 > [!NOTE]
-> At first glance the differences between the nine images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents: a self-correcting sampler whose stability bounds can be proven mathematically, paired with a scheduler that dynamically inserts intermediate steps when the sampler's invariants are triggered.
+> At first glance the differences between the nine images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents. A self-correcting sampler whose stability bounds can be proven mathematically, paired with a scheduler that dynamically inserts intermediate steps when the sampler's invariants are triggered.
 >
 > The images in this section confirm that the approach does not degrade quality while the scheduler's self-corrections remain dormant — at 30 steps the sigma schedule is already well-balanced enough that few insertions are needed.  At lower step counts (5–20) the improvement over the normal scheduler is measurable (+5 to +34%).
 
