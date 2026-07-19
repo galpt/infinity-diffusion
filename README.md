@@ -99,7 +99,7 @@ automatically — no user parameters to tune.
 All 9 sampler/scheduler combinations at 1216x832 landscape, 30 steps, CFG
 6.0, seed 56100400462260, same model (waiMatureIllustrious v2.0, SDXL).
 
-Positive:
+Positive prompt:
 
 ```
 close up, side view, upper body shot, Vogue magazine style, soft studio lighting, (cinematic depth of field:1.2), studio quality, digitally enhanced, crisp sharp black outlines, clean sharp lineart, thin geometric filigree patterns, intimate, detailed, steady gaze, rendered in sepia tones, evoking rembrandt, timeless, expressive, highly detailed, sharp focus, high resolution, masterpiece, high score, great score, absurdres, smooth film grain, cinematic light particles.
@@ -115,39 +115,22 @@ parted lips, heavy breathing.
 looking at viewer.
 ```
 
-Negative:
+Negative prompt:
 
 ```
 lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame, jagged edges, aliased
 ```
+
+> [!NOTE]
+> At first glance the differences between schedules may appear trivial, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents. A self-correcting numerical method whose stability bounds can be proven mathematically.
+>
+> Building on this foundation, future work may extend the same invariant-checking approach to other components of the diffusion pipeline, including the scheduler itself.  The images above merely confirm that the approach does not degrade quality while its corrections remain dormant.
 
 | Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
 |---|---|---|---|
 | Infinity | ![inf+inf](assets/inf_inf_30.png) | ![inf+norm](assets/inf_nor_30.png) | ![inf+kar](assets/inf_kar_30.png) |
 | DPM++ 2M | ![dpm+inf](assets/dpm_inf_30.png) | ![dpm+norm](assets/dpm_nor_30.png) | ![dpm+kar](assets/dpm_kar_30.png) |
 | Euler | ![eul+inf](assets/eul_inf_30.png) | ![eul+norm](assets/eul_nor_30.png) | ![eul+kar](assets/eul_kar_30.png) |
-
-Early testing shows consistent improvements over the normal scheduler at low
-to moderate step counts:
-
-| Steps | Improvement over normal scheduler |
-|---|---|
-| 5 | +34% |
-| 10 | +7% |
-| 20 | +13% |
-| 30 | ~0% (no insertions needed) |
-
----
-
-At first glance the differences between schedules may appear trivial, and it
-would be easy to dismiss the project entirely on that basis.  The value,
-however, is not in the visual comparison itself but in the concept it
-represents: a self-correcting numerical method whose stability bounds can be
-proven mathematically.  Building on this foundation, future work may extend
-the same invariant-checking approach to other components of the diffusion
-pipeline, including the scheduler itself.  The images above merely confirm
-that the approach does not degrade quality while its corrections remain
-dormant.
 
 ## License
 
