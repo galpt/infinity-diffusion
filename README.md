@@ -98,31 +98,6 @@ automatically — no user parameters to tune.
 
 ## Benchmark and visual comparison
 
-All 9 sampler/scheduler combinations at 1216x832 landscape, 30 steps, CFG
-6.0, seed 56100400462260, same model (waiMatureIllustrious v2.0, SDXL).
-
-Positive prompt:
-
-```
-close up, side view, upper body shot, Vogue magazine style, soft studio lighting, (cinematic depth of field:1.2), studio quality, digitally enhanced, crisp sharp black outlines, clean sharp lineart, thin geometric filigree patterns, intimate, detailed, steady gaze, rendered in sepia tones, evoking rembrandt, timeless, expressive, highly detailed, sharp focus, high resolution, masterpiece, high score, great score, absurdres, smooth film grain, cinematic light particles.
-
-1girl, solo, black hair, individual hair strands, fine hair texture, strands of hair, wispy flyaways, intricate hair details, dark red eyes, hime cut, long hair, mature female, sexy fox eyes, fair skin, beautiful feminine face.
-
-white hooded goddess silk robe, hood up, intricate lace trim, elegant, majestic, fantasy, ethereal, sacred.
-
-she has a curvy body.
-profile picture.
-
-parted lips, heavy breathing.
-looking at viewer.
-```
-
-Negative prompt:
-
-```
-lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame, jagged edges, aliased
-```
-
 Early testing shows consistent improvements over the normal scheduler at low
 to moderate step counts:
 
@@ -160,6 +135,31 @@ counts (5&ndash;20) but converge toward zero at 30 steps where the schedule is
 already well-balanced.
 
 ### Visual comparison
+
+All 9 sampler/scheduler combinations at 1216x832 landscape, 30 steps, CFG
+6.0, seed 56100400462260, same model (waiMatureIllustrious v2.0, SDXL).
+
+Positive prompt:
+
+```
+close up, side view, upper body shot, Vogue magazine style, soft studio lighting, (cinematic depth of field:1.2), studio quality, digitally enhanced, crisp sharp black outlines, clean sharp lineart, thin geometric filigree patterns, intimate, detailed, steady gaze, rendered in sepia tones, evoking rembrandt, timeless, expressive, highly detailed, sharp focus, high resolution, masterpiece, high score, great score, absurdres, smooth film grain, cinematic light particles.
+
+1girl, solo, black hair, individual hair strands, fine hair texture, strands of hair, wispy flyaways, intricate hair details, dark red eyes, hime cut, long hair, mature female, sexy fox eyes, fair skin, beautiful feminine face.
+
+white hooded goddess silk robe, hood up, intricate lace trim, elegant, majestic, fantasy, ethereal, sacred.
+
+she has a curvy body.
+profile picture.
+
+parted lips, heavy breathing.
+looking at viewer.
+```
+
+Negative prompt:
+
+```
+lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame, jagged edges, aliased
+```
 
 | Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
 |---|---|---|---|
