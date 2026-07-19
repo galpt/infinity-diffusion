@@ -219,8 +219,11 @@ class InfinitySampler:
         """
         if sigmas.ndim != 1:
             raise ValueError(f"sigmas must be 1-D, got shape {sigmas.shape}")
-        if sigmas[-1] != 0.0:
-            raise ValueError("last element of sigmas must be 0")
+        # Clamp near-zero last sigma to exactly 0 for compatibility with
+        # KSamplerAdvanced and similar nodes that may pass a sliced schedule.
+        if sigmas[-1].abs() > 1e-6:
+            sigmas = sigmas.clone()
+            sigmas[-1] = 0.0
         if sigmas.numel() < 2:
             raise ValueError("sigmas must have at least 2 elements")
 
@@ -228,24 +231,29 @@ class InfinitySampler:
         alpha2 = 0.3
         beta1 = 0.5
         beta2 = 0.3
-        n_steps = sigmas.numel() - 1
         d_prev = None
         d_prev2 = None
         vel = None
         acc = None
 
-        for i in range(n_steps):
-            denoised = denoise_fn(x, sigmas[i].item())
-            d = _to_d(x, sigmas[i], denoised)
+        # Convert to mutable list for dynamic insertion
+        sigmas_list = [sigmas[j].unsqueeze(0) for j in range(sigmas.numel())]
+        i = 0
+
+        while i < len(sigmas_list) - 1:
+            sigma_cur = sigmas_list[i].item()
+            denoised = denoise_fn(x, sigma_cur)
+            d = (x - denoised) / sigmas_list[i]
 
             if callback is not None:
-                callback({"x": x, "i": i, "sigma": sigmas[i], "sigma_hat": sigmas[i], "denoised": denoised})
+                callback({"x": x, "i": i, "sigma": sigmas_list[i], "sigma_hat": sigmas_list[i], "denoised": denoised})
 
             if i == 0:
-                x = x + d * (sigmas[i + 1] - sigmas[i])
+                x = x + d * (sigmas_list[i + 1] - sigmas_list[i])
                 d_prev = d
                 vel = torch.zeros_like(d)
                 acc = torch.zeros_like(d)
+                i += 1
                 continue
 
             # Compute correction
@@ -271,17 +279,28 @@ class InfinitySampler:
             cos_sim = (d * d_prev).sum() / (d.norm() * d_prev.norm() + 1e-8)
             reversed_dir = cos_sim < 0.0
 
+            # Self-correcting scheduler: if an invariant triggered, insert a step
+            # and redo this step for finer resolution.  The gap check prevents
+            # infinite loops when the step is already too small to split further.
+            if (clamped or reversed_dir) and i < len(sigmas_list) - 1:
+                current_gap = (sigmas_list[i] - sigmas_list[i + 1]).abs().item()
+                if current_gap > 1e-6:
+                    mid = (sigmas_list[i] + sigmas_list[i + 1]) * 0.5
+                    sigmas_list.insert(i + 1, mid)
+                    continue
+
             # Fallback: Euler step if both invariants fail
             if clamped and reversed_dir:
                 correction = torch.zeros_like(raw_correction)
-            elif reversed_dir:
+            elif inv_reversed:
                 correction = raw_correction * 0.5
             else:
                 correction = raw_correction
 
-            x = x + (d + correction) * (sigmas[i + 1] - sigmas[i])
+            x = x + (d + correction) * (sigmas_list[i + 1] - sigmas_list[i])
 
             d_prev2 = d_prev
             d_prev = d
+            i += 1
 
         return x
