@@ -1,17 +1,11 @@
 # Infinity Diffusion (realism branch)
 
 > [!NOTE]
-> This branch adds the **infinity variance stabiliser** — a per-channel
-> asymptotic correction that pulls each latent channel's standard deviation
-> toward its running EMA, compensating for non-uniform step sizes and
-> preserving volumetric 3D depth along with texture detail.  The sine-
-> perturbed scheduler concentrates step budget toward the final cleanup
-> phase.  Both follow the **Limit concept**: bounds approached asymptotically,
-> no thresholds or knobs.  Works with SD, SDXL, and Anima.
-> 
-> The sampler is the DPM-Solver / DPM-Solver++ exponential integrator (Lu et al.
-> 2022, https://arxiv.org/abs/2206.00927 / 2211.01095), mathematically identical
-> to the Euler step in the Karras ODE formulation.
+> This branch adds the Infinity variance stabiliser — a per-channel asymptotic correction that pulls each latent channel's standard deviation toward its running EMA, compensating for non-uniform step sizes and preserving volumetric 3D depth along with texture detail.
+>
+> The sine-perturbed scheduler concentrates step budget toward the final cleanup phase.  Both follow the Limit concept in this [project](https://github.com/galpt/infinity-scheduler).
+>
+> Works with SD, SDXL, and Anima.
 
 ## When to use it
 
@@ -115,13 +109,14 @@ level is from the model's training set &mdash; no jagged edges.
 
 ## Benchmark and visual comparison
 
-Perceptual Texture Score (PTS) improvements over the most common sampler and
-scheduler combinations, measured from the visual comparison images below at
-896x1152, 20 steps, CFG 6.0, seed 210895200085864:
-
 | Metric | vs DPM++ 2M + normal | vs DPM++ 2M + Karras | vs Euler + normal | vs Euler + Karras |
 |---|---|---|---|---|
 | PTS improvement (see [Visual comparison](#visual-comparison)) | +24 % | +31 % | +13 % | +7 % |
+
+Infinity delivers +24-31 % vs DPM++ variants and +7-13 % vs Euler, reflecting
+more structured texture and better depth distribution at the same step count.
+
+### How to reproduce the numbers
 
 PTS measures how **natural and depth-rich** the detail looks — it combines
 how directional the high-frequency texture is (structured detail over noise)
@@ -142,14 +137,6 @@ $$ \text{Gradient CV} = \frac{\sigma(\nabla I)}{\mu(\nabla I)} $$
 the coefficient of variation of the Sobel gradient magnitude.  Higher values
 mean the image has more contrast between detailed and smooth regions — the
 signature of volumetric depth.
-
-Infinity delivers +24-31 % vs DPM++ variants and +7-13 % vs Euler, reflecting
-more structured texture and better depth distribution at the same step count.
-
-### How to reproduce the numbers
-
-All five images were generated at the same seed, using the same model,
-prompt, and step count, so only the sampler and scheduler vary.
 
 ### Visual comparison
 
@@ -186,7 +173,7 @@ lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low 
 </table>
 
 > [!NOTE]
-> At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with a per-channel variance stabiliser (following the infinity Limit concept), paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
+> At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with a per-channel variance stabiliser, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
 
 ## License
 
