@@ -112,12 +112,12 @@ step is retried with finer resolution.
 Results with the realism branch across three diverse seeds (waiMatureIllustrious
 v2.0, SDXL, 512x512, 30 steps, CFG 7.0):
 
-| Metric | inf+inf vs dpm++2m+nor | inf+inf vs euler+nor |
-|---|---|---|---|---|
-| CSS improvement at seed 14598 | +118% | +161% |
-| CSS improvement at seed 53068 | +98% | +109% |
-| CSS improvement at seed 97565 | +15% | +36% |
-| Gradient (sharpness) | Higher on all 3 seeds | Higher on all 3 seeds |
+| Metric | vs DPM++ 2M + normal | vs Euler + normal |
+|---|---|---|
+| CSS improvement seed 14598 | 118 % | 161 % |
+| CSS improvement seed 53068 | 98 % | 109 % |
+| CSS improvement seed 97565 | 15 % | 36 % |
+| Gradient (sharpness) | Higher on all 3 | Higher on all 3 |
 
 The exponential integrator delivers reliably higher sharpness than Euler
 on every tested seed, and consistently matches or exceeds DPM++ 2M while
