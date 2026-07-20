@@ -17,8 +17,8 @@ loop as the research branch.
 multiple steps without overshooting, which helps when the image has faces,
 hands, textures, and background objects competing for attention.
 
-**Batch generation.**  Deterministic output means you can compare prompts
-or models without noise injection confounding the results.
+**Batch generation.**  Adaptive noise injection is self-cancelling across a
+large enough sample — run each prompt a few times and keep the best result.
 
 **Any step count, one setting.**  Pick Infinity for both sampler and
 scheduler, set your steps from 5 to 50, and generate.
@@ -69,6 +69,12 @@ mechanisms:
    - Clamp if exceeding 50 % of the denoised signal magnitude.
    - Halve if the denoised direction reversed.
    - Zero if both conditions are violated (plain exponential integrator step).
+
+4. **Adaptive noise injection.**  When the trajectory is stable (high invariant
+   confidence), a small amount of Gaussian noise is added to the latent after
+   each step.  This helps the sampler explore fine detail textures at the cost
+   of determinism.  When invariants trigger (low confidence), the noise is
+   reduced or eliminated.
 
 ## Scheduler
 

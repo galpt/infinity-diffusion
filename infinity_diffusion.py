@@ -173,14 +173,21 @@ class InfinitySampler:
         3.  Halve correction if the denoised direction reversed.
         4.  Zero correction if both invariants are violated (plain exponential
             integrator step).
-        5.  Insert an intermediate sigma when invariants trigger (self-correcting
-            scheduler).
+    5.  Insert an intermediate sigma when invariants trigger (self-correcting
+             scheduler).
+        6.  Inject adaptive stochastic noise when the trajectory is stable
+            (high confidence) to enhance fine detail textures.
 
-        x_{i+1}  = (sigma_{i+1} / sigma_i) * x_i - (sigma_{i+1} / sigma_i - 1) * denoised_corrected
+        The step (i >= 1, full correction):
 
-    The exponential integrator delivers sharper, more realistic detail than
-    the Euler-step formulation used in the main and research branches, while
-    the invariants keep the correction stable on erratic trajectories.
+            ratio = sigma_{i+1} / sigma_i
+            denoised_corrected = denoised + b1 * vel + b2 * acc
+            x = ratio * x - (ratio - 1) * denoised_corrected
+            if confidence > threshold:
+                x += noise * gamma * sigma_i
+
+        The noise is non-deterministic, so the realism branch does not produce
+        identical outputs across runs with the same seed.
     """
 
     def __init__(self):
@@ -297,10 +304,21 @@ class InfinitySampler:
 
             # Exponential integrator (DPM-Solver / DPM-Solver++, Lu et al. 2022)
             # https://arxiv.org/abs/2206.00927  |  https://arxiv.org/abs/2211.01095
-            # Extended with infinity EMA correction and invariant checking.
+            # Extended with infinity EMA correction, invariant checking, and
+            # adaptive noise injection.
             ratio = s_next / s_cur
             denoised_corrected = denoised + correction
             x = ratio * x - (ratio - 1) * denoised_corrected
+
+            # Adaptive noise injection — proportional to invariant confidence.
+            # When the trajectory is stable (high confidence), a small amount of
+            # stochastic noise helps the sampler explore fine detail textures.
+            # When invariants trigger (low confidence), noise is reduced or zero.
+            if i >= 1:
+                confidence = 1.0 - min(1.0, c_mag / d_mag)
+                if confidence > 0.3 and not (clamped and reversed_dir):
+                    gamma = 0.20 * ((confidence - 0.3) / 0.7)
+                    x = x + torch.randn_like(x) * gamma * s_cur
 
             d_prev2 = d_prev
             d_prev = denoised
