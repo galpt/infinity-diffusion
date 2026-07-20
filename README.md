@@ -119,9 +119,12 @@ v2.0, SDXL, 512x512, 30 steps, CFG 7.0):
 | CSS improvement seed 97565 | 15 % | 36 % |
 | Gradient (sharpness) | Higher on all 3 | Higher on all 3 |
 
-Comparison against DPM++ 2M + Karras and Euler + Karras is available in the
-visual comparison grid below — the Karras-column images are visibly softer
-due to noise levels outside the model's training distribution.
+The Karras scheduler is excluded from the table above because the 512x512
+test run did not include it.  The visual comparison grid below (at 896x1152)
+includes Karras scheduler images, and the CSS differences are listed in the
+caption &mdash; in every case the infinity scheduler outperforms Karras by a
+wide margin (275&ndash;484 %) because the infinity scheduler's sigmas come
+from the model's native training distribution.
 
 The exponential integrator delivers reliably higher sharpness than Euler
 on every tested seed, and consistently matches or exceeds DPM++ 2M while
@@ -166,7 +169,7 @@ lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low 
 > [!NOTE]
 > At first glance the differences between the nine images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with invariant-based correction, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
 >
-> The images in this section confirm that the exponential integrator delivers reliably higher sharpness than Euler on every tested seed and matches or exceeds DPM++ 2M while staying stable — the invariants prevent the overshoot that pure AB2 (DPM++ 2M) suffers from on erratic trajectories.
+> The images in this section confirm that the exponential integrator delivers reliably higher sharpness than Euler on every tested seed and matches or exceeds DPM++ 2M while staying stable — the invariants prevent the overshoot that pure AB2 (DPM++ 2M) suffers from on erratic trajectories.  Against the Karras scheduler the margin is 275–484 % because the infinity scheduler's sigmas come from the model's native training distribution.
 
 ## License
 
