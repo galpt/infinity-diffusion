@@ -2,23 +2,16 @@
 
 > [!NOTE]
 > This branch adds the **infinity variance stabiliser** — a per-channel
-> asymptotic correction that compensates for momentary distribution drift
-> caused by non-uniform step sizes.  The result preserves volumetric 3D
-> depth and natural shading gradients while the sine-perturbed scheduler
-> concentrates step budget toward the final cleanup phase for detail.
-
-The sampler implements the DPM-Solver / DPM-Solver++ (Lu et al. 2022)
-exponential integrator in denoised-prediction (x0) space, which is
-mathematically identical to the Euler step in the Karras ODE formulation.
-The innovation is entirely in the scheduler: the sine-perturbed timestep
-distribution redistributes step budget toward the end for better detail
-at the same step count, and the per-channel variance stabiliser corrects
-momentary distribution drift from uneven step sizes.
-
-Both components follow the **infinity Limit concept**: parameters approach
-their bounds asymptotically rather than through clamping or discrete
-thresholds.  This makes them safe at any step count across SD, SDXL, and
-Anima models without user configuration.
+> asymptotic correction that pulls each latent channel's standard deviation
+> toward its running EMA, compensating for non-uniform step sizes and
+> preserving volumetric 3D depth along with texture detail.  The sine-
+> perturbed scheduler concentrates step budget toward the final cleanup
+> phase.  Both follow the **Limit concept**: bounds approached asymptotically,
+> no thresholds or knobs.  Works with SD, SDXL, and Anima.
+> 
+> The sampler is the DPM-Solver / DPM-Solver++ exponential integrator (Lu et al.
+> 2022, https://arxiv.org/abs/2206.00927 / 2211.01095), mathematically identical
+> to the Euler step in the Karras ODE formulation.
 
 ## When to use it
 
