@@ -7,9 +7,9 @@
 > research branches.
 
 The sampler combines the DPM-Solver-style exponential integrator with the
-infinity sampler's self-correcting EMA and invariant checking.  The scheduler
-includes the same sine-perturbed timestep distribution and self-correcting
-loop as the research branch.
+infinity sampler's self-correcting EMA and continuous limit-based correction.
+The scheduler includes the same sine-perturbed timestep distribution and
+self-correcting loop as the research branch.
 
 ## When to use it
 
@@ -50,7 +50,7 @@ exponential integrator that produces sharper results but can overshoot
 when the trajectory changes direction.  Heun and DPM-2 require two model
 evaluations per step for their second-order accuracy.
 
-The Infinity sampler uses a single evaluation per step with three
+The Infinity sampler uses a single evaluation per step with the following
 mechanisms:
 
 1. **Exponential integrator in x0-space.**  The update follows the
@@ -65,16 +65,20 @@ mechanisms:
    correction.  Unlike DPM++ 2M's abrupt AB2 extrapolation, the EMA
    builds up gradually, preventing overshoot on sharp trajectory changes.
 
-3. **Three invariants.**  Before applying the correction:
-   - Clamp if exceeding 50 % of the denoised signal magnitude.
-   - Halve if the denoised direction reversed.
-   - Zero if both conditions are violated (plain exponential integrator step).
+3. **Continuous limit-based correction.**  Instead of discrete hard
+   thresholds, each pixel's correction is bounded by an asymptotic limiter
+   structurally identical to the infinity-scheduler's headroom formula
+   `(BUDGET_MAX − ema) / BUDGET_MAX`:
+   - The per-pixel correction approaches 50 % of `|denoised|` smoothly,
+     never exceeding it — no clamping discontinuity.
+   - The correction is attenuated continuously as the denoised direction
+     changes: full weight at cos_sim=1, half at orthogonal, zero at opposite.
 
-4. **Adaptive noise injection.**  When the trajectory is stable (high invariant
-   confidence), a small amount of Gaussian noise is added to the latent after
-   each step.  This helps the sampler explore fine detail textures at the cost
-   of determinism.  When invariants trigger (low confidence), the noise is
-   reduced or eliminated.
+4. **Adaptive noise injection.**  Gaussian noise is added to the latent
+   after each step, weighted by quadratic confidence damping.  When the
+   trajectory is stable (correction is small relative to the signal) the
+   noise approaches 20 % of the current sigma; when the trajectory is
+   uncertain it drops to near zero — continuous ramp, no threshold.
 
 ## Scheduler
 
@@ -102,10 +106,12 @@ room.  The strength s adapts to the step count:
 All sigmas pass through the model's native sigma function, so every noise
 level is from the model's training set &mdash; no jagged edges.
 
-A self-correcting loop monitors the sampler's invariants after each step.
-If either invariant is triggered (correction clamped or direction reversal),
-an intermediate sigma is inserted between the current and next step and the
-step is retried with finer resolution.
+A self-correcting loop checks the per-pixel asymptotic limiter's scale
+after each step.  If the mean scale falls below 0.2 (the limiter is heavily
+engaged across the latent), an intermediate sigma is inserted between the
+current and next step, and the step is retried with finer resolution.
+Each sigma level triggers at most one insertion, preventing repeated
+retry loops while still refining coarse regions.
 
 ## Benchmark and visual comparison
 
@@ -168,7 +174,7 @@ lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low 
 </table>
 
 > [!NOTE]
-> At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with invariant-based correction, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
+> At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with limit-based correction, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
 
 ## License
 
