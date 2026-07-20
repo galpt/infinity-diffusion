@@ -24,7 +24,7 @@ families — only the sampler and scheduler matter, nothing else to configure.
 Clone the realism branch and run the install script:
 
 ```bash
-git clone -b realism https://github.com/galpt/infinity-diffusion.git
+git clone -b realism --depth 1 https://github.com/galpt/infinity-diffusion.git
 cd infinity-diffusion
 bash comfy-infinity.sh /path/to/ComfyUI install
 ```
