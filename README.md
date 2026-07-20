@@ -152,11 +152,11 @@ lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low 
 
 | Sampler + scheduler | Image |
 |---|---|
-| Infinity + Infinity (this project) | ![inf+inf](assets/inf_inf_30.png) |
-| DPM++ 2M + normal | ![dpm+nor](assets/dpm_nor_30.png) |
-| DPM++ 2M + Karras | ![dpm+kar](assets/dpm_kar_30.png) |
-| Euler + normal | ![eul+nor](assets/eul_nor_30.png) |
-| Euler + Karras | ![eul+kar](assets/eul_kar_30.png) |
+| Infinity + Infinity (this project) | ![inf+inf](assets/inf_inf_20.png) |
+| DPM++ 2M + normal | ![dpm+nor](assets/dpm_nor_20.png) |
+| DPM++ 2M + Karras | ![dpm+kar](assets/dpm_kar_20.png) |
+| Euler + normal | ![eul+nor](assets/eul_nor_20.png) |
+| Euler + Karras | ![eul+kar](assets/eul_kar_20.png) |
 
 > [!NOTE]
 > At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with invariant-based correction, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
