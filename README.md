@@ -150,28 +150,22 @@ Negative prompt:
 lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame.
 ```
 
-<p align="center">
-  <figure style="display:inline-block; text-align:center; margin:10px">
-    <img src="assets/inf_inf_20.png" width="160" alt="inf+inf"><br>
-    <figcaption><b>Infinity + Infinity</b></figcaption>
-  </figure>
-  <figure style="display:inline-block; text-align:center; margin:10px">
-    <img src="assets/dpm_nor_20.png" width="160" alt="dpm+nor"><br>
-    <figcaption>DPM++ 2M + normal</figcaption>
-  </figure>
-  <figure style="display:inline-block; text-align:center; margin:10px">
-    <img src="assets/dpm_kar_20.png" width="160" alt="dpm+kar"><br>
-    <figcaption>DPM++ 2M + Karras</figcaption>
-  </figure>
-  <figure style="display:inline-block; text-align:center; margin:10px">
-    <img src="assets/eul_nor_20.png" width="160" alt="eul+nor"><br>
-    <figcaption>Euler + normal</figcaption>
-  </figure>
-  <figure style="display:inline-block; text-align:center; margin:10px">
-    <img src="assets/eul_kar_20.png" width="160" alt="eul+kar"><br>
-    <figcaption>Euler + Karras</figcaption>
-  </figure>
-</p>
+<table>
+<tr>
+  <td align="center"><b>Infinity + Infinity</b></td>
+  <td align="center"><b>DPM++ 2M + normal</b></td>
+  <td align="center"><b>DPM++ 2M + Karras</b></td>
+  <td align="center"><b>Euler + normal</b></td>
+  <td align="center"><b>Euler + Karras</b></td>
+</tr>
+<tr>
+  <td><img src="assets/inf_inf_20.png" width="160" alt="inf+inf"></td>
+  <td><img src="assets/dpm_nor_20.png" width="160" alt="dpm+nor"></td>
+  <td><img src="assets/dpm_kar_20.png" width="160" alt="dpm+kar"></td>
+  <td><img src="assets/eul_nor_20.png" width="160" alt="eul+nor"></td>
+  <td><img src="assets/eul_kar_20.png" width="160" alt="eul+kar"></td>
+</tr>
+</table>
 
 > [!NOTE]
 > At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with invariant-based correction, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
