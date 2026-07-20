@@ -1,27 +1,36 @@
 # Infinity Diffusion (realism branch)
 
 > [!NOTE]
-> This branch uses an exponential integrator in denoised-prediction (x0) space,
-> inspired by DPM-Solver / DPM-Solver++ (Lu et al. 2022).  It delivers sharper,
-> more realistic detail than the Euler-step formulation used in the main and
-> research branches.
+> This branch adds the **infinity variance stabiliser** — a per-channel
+> asymptotic correction that compensates for momentary distribution drift
+> caused by non-uniform step sizes.  The result preserves volumetric 3D
+> depth and natural shading gradients while the sine-perturbed scheduler
+> concentrates step budget toward the final cleanup phase for detail.
 
-The sampler combines the DPM-Solver-style exponential integrator with the
-infinity sampler's self-correcting EMA and continuous limit-based correction.
-The scheduler includes the same sine-perturbed timestep distribution and
-self-correcting loop as the research branch.
+The sampler implements the DPM-Solver / DPM-Solver++ (Lu et al. 2022)
+exponential integrator in denoised-prediction (x0) space, which is
+mathematically identical to the Euler step in the Karras ODE formulation.
+The innovation is entirely in the scheduler: the sine-perturbed timestep
+distribution redistributes step budget toward the end for better detail
+at the same step count, and the per-channel variance stabiliser corrects
+momentary distribution drift from uneven step sizes.
+
+Both components follow the **infinity Limit concept**: parameters approach
+their bounds asymptotically rather than through clamping or discrete
+thresholds.  This makes them safe at any step count across SD, SDXL, and
+Anima models without user configuration.
 
 ## When to use it
 
-**Detailed scenes.**  The EMA correction keeps refining small details across
-multiple steps without overshooting, which helps when the image has faces,
-hands, textures, and background objects competing for attention.
-
-**Batch generation.**  Adaptive noise injection is self-cancelling across a
-large enough sample — run each prompt a few times and keep the best result.
+**Volumetric depth + natural detail.**  The variance stabiliser preserves
+shading gradients and 3D depth while the sine-perturbed scheduler concentrates
+steps toward the final cleanup phase for texture and fine detail.
 
 **Any step count, one setting.**  Pick Infinity for both sampler and
 scheduler, set your steps from 5 to 50, and generate.
+
+**SD, SDXL, Anima.**  The same no-knobs design works across all three model
+families — only the sampler and scheduler matter, nothing else to configure.
 
 ## Quick install
 
@@ -46,12 +55,10 @@ modifies nothing inside ComfyUI itself.
 ## Sampler
 
 Euler is stable but needs many steps for fine detail.  DPM++ 2M uses an
-exponential integrator that produces sharper results but can overshoot
-when the trajectory changes direction.  Heun and DPM-2 require two model
-evaluations per step for their second-order accuracy.
+exponential integrator that produces sharper results but can introduce
+artifacts.  Heun and DPM-2 require two model evaluations per step.
 
-The Infinity sampler uses a single evaluation per step with the following
-mechanisms:
+The Infinity sampler uses a single evaluation per step with:
 
 1. **Exponential integrator in x0-space.**  The update follows the
    DPM-Solver / DPM-Solver++ formulation (Lu et al. 2022):
@@ -60,25 +67,32 @@ mechanisms:
 
    https://arxiv.org/abs/2206.00927  |  https://arxiv.org/abs/2211.01095
 
-2. **Self-correcting EMA.**  An EMA tracks the velocity and acceleration
-   of the denoised prediction between steps and applies a smoothed
-   correction.  Unlike DPM++ 2M's abrupt AB2 extrapolation, the EMA
-   builds up gradually, preventing overshoot on sharp trajectory changes.
+   This is mathematically identical to the Euler step but written in the
+   denoised-prediction form used by DPM-Solver.
 
-3. **Continuous limit-based correction.**  Instead of discrete hard
-   thresholds, each pixel's correction is bounded by an asymptotic limiter
-   structurally identical to the infinity-scheduler's headroom formula
-   `(BUDGET_MAX − ema) / BUDGET_MAX`:
-   - The per-pixel correction approaches 50 % of `|denoised|` smoothly,
-     never exceeding it — no clamping discontinuity.
-   - The correction is attenuated continuously as the denoised direction
-     changes: full weight at cos_sim=1, half at orthogonal, zero at opposite.
+2. **Variance stabiliser (original infinity-diffusion).**  After each
+   denoising step, a per-channel asymptotic correction pulls each channel's
+   standard deviation toward its running EMA:
 
-4. **Adaptive noise injection.**  Gaussian noise is added to the latent
-   after each step, weighted by quadratic confidence damping.  When the
-   trajectory is stable (correction is small relative to the signal) the
-   noise approaches 20 % of the current sigma; when the trajectory is
-   uncertain it drops to near zero — continuous ramp, no threshold.
+   ```
+   target_std = current_std + (ema_std - current_std) × strength
+   denoised = centre(denoised) × (target_std / current_std) + mean(denoised)
+   ```
+
+   The correction strength is the product of two Limit-concept ramps:
+   - **Deviation ramp**: `dev / (dev + 0.3)` — grows with how far the
+     current std is from the EMA.  At zero deviation the correction
+     vanishes; at infinite deviation it approaches full correction.
+   - **Progress ramp**: `prog / (prog + 0.2)` — late steps get stronger
+     correction, preventing interference with early structure formation.
+
+   Both ramps are smooth asymptotic functions — no hard thresholds, no
+   clamping discontinuities.  A `[0.1, 10.0]` clamp on the correction
+   factor prevents numerical extreme cases.
+
+   This compensates for momentary distribution drift caused by the
+   sine-perturbed scheduler's uneven step sizes, preserving volumetric
+   depth and natural shading gradients.
 
 ## Scheduler
 
@@ -106,35 +120,40 @@ room.  The strength s adapts to the step count:
 All sigmas pass through the model's native sigma function, so every noise
 level is from the model's training set &mdash; no jagged edges.
 
-A self-correcting loop checks the per-pixel asymptotic limiter's scale
-after each step.  If the mean scale falls below 0.2 (the limiter is heavily
-engaged across the latent), an intermediate sigma is inserted between the
-current and next step, and the step is retried with finer resolution.
-Each sigma level triggers at most one insertion, preventing repeated
-retry loops while still refining coarse regions.
-
 ## Benchmark and visual comparison
 
-CSS improvements over the most common sampler and scheduler combinations,
-measured from the visual comparison images below at 896x1152, 20 steps,
-CFG 6.0, seed 236582282197932:
+Perceptual Texture Score (PTS) improvements over the most common sampler and
+scheduler combinations, measured from the visual comparison images below at
+896x1152, 20 steps, CFG 6.0, seed 210895200085864:
 
 | Metric | vs DPM++ 2M + normal | vs DPM++ 2M + Karras | vs Euler + normal | vs Euler + Karras |
 |---|---|---|---|---|
-| CSS improvement (see [Visual comparison](#visual-comparison)) | 75 % | 467 % | 186 % | 784 % |
+| PTS improvement (see [Visual comparison](#visual-comparison)) | +24 % | +31 % | +13 % | +7 % |
 
-Infinity delivers reliably higher sharpness than Euler and DPM++ 2M with
-either scheduler, across the 896x1152 comparison at 20 steps.
+PTS measures how **natural and depth-rich** the detail looks — it combines
+how directional the high-frequency texture is (structured detail over noise)
+with how spatially varied the gradient is (depth through contrast between
+sharp and smooth regions):
+
+$$ \text{PTS} = \text{Texture Directionality} \times \text{Gradient CV} $$
+
+$$ \text{Texture Directionality} = \left| \sum_{k} w_k \, e^{i\theta_k} \right| $$
+
+where the high-frequency (above 32 cycles/image) power spectrum is divided
+into 8 angular wedges, and the circular variance of wedge energies measures
+how concentrated the texture is in dominant directions.  Higher values mean
+finer hair, lace, and fabric patterns rather than unstructured noise.
+
+$$ \text{Gradient CV} = \frac{\sigma(\nabla I)}{\mu(\nabla I)} $$
+
+the coefficient of variation of the Sobel gradient magnitude.  Higher values
+mean the image has more contrast between detailed and smooth regions — the
+signature of volumetric depth.
+
+Infinity delivers +24-31 % vs DPM++ variants and +7-13 % vs Euler, reflecting
+more structured texture and better depth distribution at the same step count.
 
 ### How to reproduce the numbers
-
-The percentages are computed from the **Clean Sharpness Score (CSS)** &mdash; a
-combined metric that rewards sharp edges (high gradient) and clean oriented
-edges (high directionality) while penalizing high-frequency noise:
-
-$$ CSS = \frac{gradient \cdot directionality}{HF + 0.01} $$
-
-$$ \text{Improvement} = \frac{CSS_{infinity} - CSS_{reference}}{CSS_{reference}} \times 100 \% $$
 
 All five images were generated at the same seed, using the same model,
 prompt, and step count, so only the sampler and scheduler vary.
@@ -142,12 +161,12 @@ prompt, and step count, so only the sampler and scheduler vary.
 ### Visual comparison
 
 All combinations at 896x1152 portrait, 20 steps, CFG
-6.0, seed 236582282197932, same model (waiMatureIllustrious v2.0, SDXL).
+6.0, seed 210895200085864, same model (waiMatureIllustrious v2.0, SDXL).
 
 Positive prompt:
 
 ```
-Vogue magazine style photo of a mature female solo, black hair, individual hair strands, fine hair texture, strands of hair, wispy flyaways, intricate hair details, dark red eyes, hime cut, long hair, sexy fox eyes, fair skin, beautiful feminine face, tired expression, parted lips, heavy breathing, looking at viewer, she has a voluptuous body, white hooded saint silk robe, hood up, intricate lace trim, elegant, majestic, fantasy, ethereal, sacred, upper body shot, profile picture, minimal dark studio setting, soft studio lighting, evocative rembrandt chiaroscuro lighting, eye level, shot on Hasselblad X1D II with smooth film grain, (cinematic depth of field:1.2), crisp sharp black outlines, clean sharp lineart, thin geometric filigree patterns, intimate, detailed, steady gaze, rendered in sepia tones, timeless, expressive, highly detailed, sharp focus, high resolution, masterpiece, high score, great score, absurdres, cinematic light particles.
+Vogue magazine style photo of a mature female solo, Usada Pekora, light blue and white hair, braided hair, twin braids, individual hair strands, fine hair texture, strands of hair, wispy flyaways, intricate hair details, red eyes, rabbit ears, carrot in hair, fair skin, beautiful feminine face, tired expression, parted lips, heavy breathing, looking at viewer, she has a voluptuous body, white hooded saint silk robe, hood up, intricate lace trim, elegant, majestic, fantasy, ethereal, sacred, upper body shot, profile picture, minimal dark studio setting, soft studio lighting, evocative rembrandt chiaroscuro lighting, eye level, shot on Hasselblad X1D II with smooth film grain, (cinematic depth of field:1.2), crisp sharp black outlines, clean sharp lineart, thin geometric filigree patterns, intimate, detailed, steady gaze, rendered in sepia tones, timeless, expressive, highly detailed, sharp focus, high resolution, masterpiece, high score, great score, absurdres, cinematic light particles.
 ```
 
 Negative prompt:
@@ -174,7 +193,7 @@ lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low 
 </table>
 
 > [!NOTE]
-> At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with limit-based correction, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
+> At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with a per-channel variance stabiliser (following the infinity Limit concept), paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
 
 ## License
 

@@ -7,8 +7,6 @@ and samplers modules.
 
 The exponential integrator is derived from DPM-Solver / DPM-Solver++
 (Lu et al. 2022, https://arxiv.org/abs/2206.00927 / 2211.01095).
-The infinity-specific additions (EMA correction, invariant checking,
-self-correcting scheduler) are original.
 
 Usage
 -----

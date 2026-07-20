@@ -3,13 +3,12 @@ infinity_diffusion.py — Exponential-integrator sampler for diffusion models.
 
 Provides two components:
 
-  - InfinitySampler   — DPM-Solver-style exponential integrator with
-                        x0-space EMA correction and invariant checking
+  - InfinitySampler   — DPM-Solver-style exponential integrator
   - InfinityScheduler — sine-perturbed sigma schedule with adaptive strength
 
 Both are framework-agnostic: they accept and return plain torch Tensors and
 do not depend on ComfyUI, Hugging Face Diffusers, or any specific diffusion
-codebase.
+codebase.  Works with 2D latents (SD, SDXL) and 3D latents (Anima).
 
 Usage
 -----
@@ -39,12 +38,92 @@ def _append_zero(x: torch.Tensor) -> torch.Tensor:
     return torch.cat([x, x.new_zeros([1])])
 
 
-def _to_d(x: torch.Tensor, sigma: torch.Tensor, denoised: torch.Tensor) -> torch.Tensor:
-    """Convert a denoiser output to a Karras ODE derivative.
+def _variance_stabilize(
+    denoised: torch.Tensor,
+    ema_std: torch.Tensor | None,
+    momentum: float,
+    progress: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Per-channel variance stabilisation — original infinity-diffusion.
 
-    Returns (x - denoised) / sigma, broadcast over the spatial dimensions.
+    Applies a Limit-concept asymptotic correction to each channel's
+    standard deviation, pulling it toward the running EMA.  The correction
+    ramps up with sampling progress (late-trajectory focus) and with the
+    deviation from the EMA — both via smooth asymptotic functions, no
+    thresholds.
+
+    Parameters
+    ----------
+    denoised : Tensor
+        Model's denoised prediction at the current step.
+    ema_std : Tensor or None
+        Running per-channel EMA of standard deviations.  ``None`` on the
+        first call (statistics are recorded but no correction is applied).
+    momentum : float
+        EMA momentum in ``[0, 1]`` — ``1 - 1 / steps``.
+    progress : float
+        Sampling progress in ``[0, 1]`` — ``i / (total_steps - 1)``.
+
+    Returns
+    -------
+    corrected : Tensor
+        Denoised prediction with per-channel variance pulled toward the
+        EMA.  On the first call, identical to the input.
+    ema_std : Tensor
+        Updated per-channel EMA of standard deviations.
     """
-    return (x - denoised) / sigma.reshape(-1, *([1] * (x.ndim - 1)))
+    ndim = denoised.ndim
+    folded = False
+    d = denoised
+
+    # 5D → 4D folding for Anima / video models
+    if ndim == 5:
+        B, C, T, H, W = d.shape
+        d = d.transpose(1, 2).reshape(B * T, C, H, W)
+        folded = True
+
+    # Per-channel statistics: reduce over batch and spatial dims
+    eps_std = 1e-4  # floor protects against uniform-channel explosion & float16 underflow
+    mean = d.mean(dim=(0, 2, 3), keepdim=True)   # (1, C, 1, 1)
+    centered = d - mean
+    current_std = centered.std(dim=(0, 2, 3)).clamp(min=eps_std)  # (C,)
+
+    if ema_std is None:
+        # First call — no correction, initialise EMA
+        return denoised, current_std.detach().clone()
+
+    # EMA update
+    new_ema = momentum * ema_std + (1.0 - momentum) * current_std
+
+    # Limit-concept deviation: how far current is from the EMA
+    # As deviation → 0:  strength → 0 (no correction)
+    # As deviation → ∞: strength → 1 (full correction)
+    deviation = (current_std / (new_ema + eps_std) - 1.0).abs()
+    deviation_strength = deviation / (deviation + 0.3)
+
+    # Progress ramp: late steps get stronger correction
+    # As progress → 0:  ramp → 0 (no correction early)
+    # As progress → 1:  ramp → 0.83 (approaches max)
+    progress_strength = progress / (progress + 0.2)
+
+    # Combined strength is the product of both asymptotes
+    strength = deviation_strength * progress_strength
+
+    # Move current_std toward new_ema by `strength` of the gap
+    target_std = current_std + (new_ema - current_std) * strength
+    # Numerically stable correction factor, clamped to prevent explosion
+    # when current_std is near-zero (uniform channel at early steps).
+    corr_factor = (target_std / current_std).clamp(min=0.1, max=10.0)  # (C,)
+
+    # Apply: centre → scale → re-center
+    shape = [1, -1] + [1] * (d.ndim - 2)  # (1, C, 1, ...)
+    result = centered * corr_factor.reshape(*shape) + mean
+
+    # 4D → 5D unfolding
+    if folded:
+        result = result.view(B, T, C, H, W).transpose(1, 2).contiguous()
+
+    return result, new_ema.detach()
 
 
 # ---------------------------------------------------------------------------
@@ -162,32 +241,30 @@ class InfinityScheduler:
 
 
 class InfinitySampler:
-    """Exponential-integrator sampler with x0-space EMA correction (Infinity).
+    """Exponential-integrator sampler for diffusion models.
 
-    Follows the DPM-Solver++ (2M) exponential integrator formulation in
-    denoised-prediction (x0) space, extended with the infinity sampler's
-    self-correcting EMA and invariant checking:
+    Implements the DPM-Solver / DPM-Solver++ (Lu et al. 2022) exponential
+    integrator in denoised-prediction (x0) space:
 
-        1.  Corrected denoised prediction via velocity + acceleration EMA.
-        2.  Clamp correction at 50 % of the denoised signal magnitude.
-        3.  Halve correction if the denoised direction reversed.
-        4.  Zero correction if both invariants are violated (plain exponential
-            integrator step).
-    5.  Insert an intermediate sigma when invariants trigger (self-correcting
-             scheduler).
-        6.  Inject adaptive stochastic noise when the trajectory is stable
-            (high confidence) to enhance fine detail textures.
+        ratio = sigma_{i+1} / sigma_i
+        x = ratio * x - (ratio - 1) * denoised
 
-        The step (i >= 1, full correction):
+    Adds the **infinity variance stabiliser** — a per-channel asymptotic
+    correction that pulls each channel's standard deviation toward its
+    running EMA.  This compensates for momentary distribution drift caused
+    by non-uniform step sizes (the sine-perturbed scheduler redistributes
+    step budget toward the end, creating uneven gaps).
 
-            ratio = sigma_{i+1} / sigma_i
-            denoised_corrected = denoised + b1 * vel + b2 * acc
-            x = ratio * x - (ratio - 1) * denoised_corrected
-            if confidence > threshold:
-                x += noise * gamma * sigma_i
+    The correction follows the Limit concept throughout:
+    *  Correction strength is proportional to deviation from the EMA.
+    *  Correction ramps up with sampling progress (late-trajectory focus).
+    *  Both ramps are smooth asymptotic functions — no hard thresholds.
 
-        The noise is non-deterministic, so the realism branch does not produce
-        identical outputs across runs with the same seed.
+    The step:
+
+        denoised = model(x, sigma)
+        denoised = variance_stabilise(denoised)   ← infinity original
+        x = ratio * x - (ratio - 1) * denoised
     """
 
     def __init__(self):
@@ -216,7 +293,7 @@ class InfinitySampler:
             monotonic decreasing sequence of length N+1 where the last element
             is 0.
         callback : callable, optional
-            A function ``callback({'x': x, 'i': i, 'sigma': sigma, 'denoised': denoised})``
+            A function ``callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma_hat, 'denoised': denoised})``
             called after each denoising step for progress reporting.
 
         Returns
@@ -234,16 +311,9 @@ class InfinitySampler:
         if sigmas.numel() < 2:
             raise ValueError("sigmas must have at least 2 elements")
 
-        alpha1 = 0.5
-        alpha2 = 0.3
-        beta1 = 0.5
-        beta2 = 0.3
-        d_prev = None
-        d_prev2 = None
-        vel = None
-        acc = None
-
         sigmas_list = [sigmas[j].unsqueeze(0) for j in range(sigmas.numel())]
+        total_steps = sigmas.numel() - 1
+        variance_ema = None  # per-channel EMA of standard deviations
         i = 0
 
         while i < len(sigmas_list) - 1:
@@ -254,74 +324,21 @@ class InfinitySampler:
             if callback is not None:
                 callback({"x": x, "i": i, "sigma": s_cur, "sigma_hat": s_cur, "denoised": denoised})
 
-            # Bootstrap step: exponential integrator (DPM-Solver, Lu et al. 2022)
-            # https://arxiv.org/abs/2206.00927
+            # Variance stabiliser — original infinity-diffusion
+            # Pulls per-channel std toward the running EMA, correcting
+            # momentary distribution drift from uneven step sizes.
             if i == 0:
-                ratio = s_next / s_cur
-                x = ratio * x - (ratio - 1) * denoised
-                d_prev = denoised
-                vel = torch.zeros_like(denoised)
-                acc = torch.zeros_like(denoised)
-                i += 1
-                continue
-
-            # EMA correction on denoised prediction (x0) space
-            delta = denoised - d_prev
-            if i == 1:
-                vel = (1.0 - alpha1) * vel + alpha1 * delta
-                raw_correction = beta1 * vel
+                # Bootstrap: initialise EMA from the first prediction
+                _, variance_ema = _variance_stabilize(denoised, None, 0.0, 0.0)
             else:
-                delta_prev = d_prev - d_prev2
-                vel = (1.0 - alpha1) * vel + alpha1 * delta
-                acc = (1.0 - alpha2) * acc + alpha2 * (delta - delta_prev)
-                raw_correction = beta1 * vel + beta2 * acc
+                momentum = 1.0 - 1.0 / total_steps
+                progress = i / total_steps
+                denoised, variance_ema = _variance_stabilize(
+                    denoised, variance_ema, momentum, progress,
+                )
 
-            # Invariant: correction must not exceed 50 % of the denoised signal
-            d_mag = denoised.abs().mean() + 1e-8
-            c_mag = raw_correction.abs().mean()
-            clamped = c_mag > 0.5 * d_mag
-            if clamped:
-                raw_correction = raw_correction * (0.5 * d_mag / c_mag)
-
-            # Invariant: denoised direction should not reverse sharply
-            cos_sim = (denoised * d_prev).sum() / (denoised.norm() * d_prev.norm() + 1e-8)
-            reversed_dir = cos_sim < 0.0
-
-            # Self-correcting scheduler
-            if (clamped or reversed_dir) and i < len(sigmas_list) - 1:
-                current_gap = (s_cur - s_next).abs().item()
-                if current_gap > 1e-6:
-                    sigmas_list.insert(i + 1, (s_cur + s_next) * 0.5)
-                    continue
-
-            # Fallback
-            if clamped and reversed_dir:
-                correction = torch.zeros_like(raw_correction)
-            elif reversed_dir:
-                correction = raw_correction * 0.5
-            else:
-                correction = raw_correction
-
-            # Exponential integrator (DPM-Solver / DPM-Solver++, Lu et al. 2022)
-            # https://arxiv.org/abs/2206.00927  |  https://arxiv.org/abs/2211.01095
-            # Extended with infinity EMA correction, invariant checking, and
-            # adaptive noise injection.
             ratio = s_next / s_cur
-            denoised_corrected = denoised + correction
-            x = ratio * x - (ratio - 1) * denoised_corrected
-
-            # Adaptive noise injection — proportional to invariant confidence.
-            # When the trajectory is stable (high confidence), a small amount of
-            # stochastic noise helps the sampler explore fine detail textures.
-            # When invariants trigger (low confidence), noise is reduced or zero.
-            if i >= 1:
-                confidence = 1.0 - min(1.0, c_mag / d_mag)
-                if confidence > 0.3 and not (clamped and reversed_dir):
-                    gamma = 0.20 * ((confidence - 0.3) / 0.7)
-                    x = x + torch.randn_like(x) * gamma * s_cur
-
-            d_prev2 = d_prev
-            d_prev = denoised
+            x = ratio * x - (ratio - 1) * denoised
             i += 1
 
         return x
