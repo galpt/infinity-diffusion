@@ -150,13 +150,28 @@ Negative prompt:
 lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame.
 ```
 
-| Sampler + scheduler | Image |
-|---|---|
-| Infinity + Infinity (this project) | ![inf+inf](assets/inf_inf_20.png) |
-| DPM++ 2M + normal | ![dpm+nor](assets/dpm_nor_20.png) |
-| DPM++ 2M + Karras | ![dpm+kar](assets/dpm_kar_20.png) |
-| Euler + normal | ![eul+nor](assets/eul_nor_20.png) |
-| Euler + Karras | ![eul+kar](assets/eul_kar_20.png) |
+<p align="center">
+  <figure style="display:inline-block; text-align:center; margin:10px">
+    <img src="assets/inf_inf_20.png" width="160" alt="inf+inf"><br>
+    <figcaption><b>Infinity + Infinity</b></figcaption>
+  </figure>
+  <figure style="display:inline-block; text-align:center; margin:10px">
+    <img src="assets/dpm_nor_20.png" width="160" alt="dpm+nor"><br>
+    <figcaption>DPM++ 2M + normal</figcaption>
+  </figure>
+  <figure style="display:inline-block; text-align:center; margin:10px">
+    <img src="assets/dpm_kar_20.png" width="160" alt="dpm+kar"><br>
+    <figcaption>DPM++ 2M + Karras</figcaption>
+  </figure>
+  <figure style="display:inline-block; text-align:center; margin:10px">
+    <img src="assets/eul_nor_20.png" width="160" alt="eul+nor"><br>
+    <figcaption>Euler + normal</figcaption>
+  </figure>
+  <figure style="display:inline-block; text-align:center; margin:10px">
+    <img src="assets/eul_kar_20.png" width="160" alt="eul+kar"><br>
+    <figcaption>Euler + Karras</figcaption>
+  </figure>
+</p>
 
 > [!NOTE]
 > At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with invariant-based correction, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
