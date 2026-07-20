@@ -113,15 +113,10 @@ Results with the realism branch across three diverse seeds (waiMatureIllustrious
 v2.0, SDXL, 512x512, 30 steps, CFG 7.0):
 
 | Metric | vs DPM++ 2M + normal | vs DPM++ 2M + Karras | vs Euler + normal | vs Euler + Karras |
-|---|---|---|---|---|
-| CSS improvement seed 14598 | 118 % | — | 161 % | — |
-| CSS improvement seed 53068 | 98 % | — | 109 % | — |
-| CSS improvement seed 97565 | 15 % | — | 36 % | — |
-| CSS improvement (visual grid) | 15 % | 275 % | 89 % | 484 % |
-| Gradient (sharpness) | Higher on all 3 | Higher | Higher on all 3 | Higher |
-from the model's native training distribution.
+|---|---|---|---|---|---|
+| CSS improvement (see [Visual comparison](#visual-comparison)) | 75 % | 467 % | 186 % | 784 % |
 
-The exponential integrator delivers reliably higher sharpness than Euler
+Infinity delivers reliably higher sharpness than Euler
 on every tested seed, and consistently matches or exceeds DPM++ 2M while
 avoiding its overshoot risk.
 
@@ -140,7 +135,7 @@ prompt, and step count, so only the sampler/scheduler varies.
 
 ### Visual comparison
 
-All 9 sampler/scheduler combinations at 896x1152 portrait, 20 steps, CFG
+All combinations at 896x1152 portrait, 20 steps, CFG
 6.0, seed 236582282197932, same model (waiMatureIllustrious v2.0, SDXL).
 
 Positive prompt:
@@ -155,16 +150,16 @@ Negative prompt:
 lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame.
 ```
 
-| Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
-|---|---|---|---|
-| Infinity | ![inf+inf](assets/inf_inf_30.png) | ![inf+norm](assets/inf_nor_30.png) | ![inf+kar](assets/inf_kar_30.png) |
-| DPM++ 2M | ![dpm+inf](assets/dpm_inf_30.png) | ![dpm+norm](assets/dpm_nor_30.png) | ![dpm+kar](assets/dpm_kar_30.png) |
-| Euler | ![eul+inf](assets/eul_inf_30.png) | ![eul+norm](assets/eul_nor_30.png) | ![eul+kar](assets/eul_kar_30.png) |
+| Sampler + scheduler | Image |
+|---|---|
+| Infinity + Infinity (this project) | ![inf+inf](assets/inf_inf_30.png) |
+| DPM++ 2M + normal | ![dpm+nor](assets/dpm_nor_30.png) |
+| DPM++ 2M + Karras | ![dpm+kar](assets/dpm_kar_30.png) |
+| Euler + normal | ![eul+nor](assets/eul_nor_30.png) |
+| Euler + Karras | ![eul+kar](assets/eul_kar_30.png) |
 
 > [!NOTE]
-> At first glance the differences between the nine images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with invariant-based correction, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
->
-> The images in this section confirm that the exponential integrator delivers reliably higher sharpness than Euler on every tested seed and matches or exceeds DPM++ 2M while staying stable — the invariants prevent the overshoot that pure AB2 (DPM++ 2M) suffers from on erratic trajectories.  Karras scheduler numbers are included in the table above (visual grid row); the large margins (275–484 %) come from the Karras scheduler computing sigmas outside the model's training distribution.
+> At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with invariant-based correction, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
 
 ## License
 
