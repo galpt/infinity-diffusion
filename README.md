@@ -119,6 +119,10 @@ v2.0, SDXL, 512x512, 30 steps, CFG 7.0):
 | CSS improvement seed 97565 | 15 % | 36 % |
 | Gradient (sharpness) | Higher on all 3 | Higher on all 3 |
 
+Comparison against DPM++ 2M + Karras and Euler + Karras is available in the
+visual comparison grid below — the Karras-column images are visibly softer
+due to noise levels outside the model's training distribution.
+
 The exponential integrator delivers reliably higher sharpness than Euler
 on every tested seed, and consistently matches or exceeds DPM++ 2M while
 avoiding its overshoot risk.
