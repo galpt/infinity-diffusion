@@ -132,7 +132,31 @@ prompt, and step count, so only the sampler/scheduler varies.
 
 ### Visual comparison
 
-Images will be added after the next round of manual generation.
+All 9 sampler/scheduler combinations at 896x1152 portrait, 20 steps, CFG
+6.0, seed 236582282197932, same model (waiMatureIllustrious v2.0, SDXL).
+
+Positive prompt:
+
+```
+Vogue magazine style photo of a mature female solo, black hair, individual hair strands, fine hair texture, strands of hair, wispy flyaways, intricate hair details, dark red eyes, hime cut, long hair, sexy fox eyes, fair skin, beautiful feminine face, tired expression, parted lips, heavy breathing, looking at viewer, she has a voluptuous body, white hooded saint silk robe, hood up, intricate lace trim, elegant, majestic, fantasy, ethereal, sacred, upper body shot, profile picture, minimal dark studio setting, soft studio lighting, evocative rembrandt chiaroscuro lighting, eye level, shot on Hasselblad X1D II with smooth film grain, (cinematic depth of field:1.2), crisp sharp black outlines, clean sharp lineart, thin geometric filigree patterns, intimate, detailed, steady gaze, rendered in sepia tones, timeless, expressive, highly detailed, sharp focus, high resolution, masterpiece, high score, great score, absurdres, cinematic light particles.
+```
+
+Negative prompt:
+
+```
+lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame.
+```
+
+| Sampler | Infinity scheduler | Normal scheduler | Karras scheduler |
+|---|---|---|---|
+| Infinity | ![inf+inf](assets/inf_inf_30.png) | ![inf+norm](assets/inf_nor_30.png) | ![inf+kar](assets/inf_kar_30.png) |
+| DPM++ 2M | ![dpm+inf](assets/dpm_inf_30.png) | ![dpm+norm](assets/dpm_nor_30.png) | ![dpm+kar](assets/dpm_kar_30.png) |
+| Euler | ![eul+inf](assets/eul_inf_30.png) | ![eul+norm](assets/eul_nor_30.png) | ![eul+kar](assets/eul_kar_30.png) |
+
+> [!NOTE]
+> At first glance the differences between the nine images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with invariant-based correction, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
+>
+> The images in this section confirm that the exponential integrator delivers reliably higher sharpness than Euler on every tested seed and matches or exceeds DPM++ 2M while staying stable — the invariants prevent the overshoot that pure AB2 (DPM++ 2M) suffers from on erratic trajectories.
 
 ## License
 
