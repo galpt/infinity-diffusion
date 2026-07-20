@@ -109,16 +109,16 @@ step is retried with finer resolution.
 
 ## Benchmark and visual comparison
 
-Results with the realism branch across three diverse seeds (waiMatureIllustrious
-v2.0, SDXL, 512x512, 30 steps, CFG 7.0):
+CSS improvements over the most common sampler and scheduler combinations,
+measured from the visual comparison images below at 896x1152, 20 steps,
+CFG 6.0, seed 236582282197932:
 
 | Metric | vs DPM++ 2M + normal | vs DPM++ 2M + Karras | vs Euler + normal | vs Euler + Karras |
-|---|---|---|---|---|---|
+|---|---|---|---|---|
 | CSS improvement (see [Visual comparison](#visual-comparison)) | 75 % | 467 % | 186 % | 784 % |
 
-Infinity delivers reliably higher sharpness than Euler
-on every tested seed, and consistently matches or exceeds DPM++ 2M while
-avoiding its overshoot risk.
+Infinity delivers reliably higher sharpness than Euler and DPM++ 2M with
+either scheduler, across the 896x1152 comparison at 20 steps.
 
 ### How to reproduce the numbers
 
@@ -130,8 +130,8 @@ $$ CSS = \frac{gradient \cdot directionality}{HF + 0.01} $$
 
 $$ \text{Improvement} = \frac{CSS_{infinity} - CSS_{reference}}{CSS_{reference}} \times 100 \% $$
 
-All combinations were generated at the same seed, using the same model,
-prompt, and step count, so only the sampler/scheduler varies.
+All five images were generated at the same seed, using the same model,
+prompt, and step count, so only the sampler and scheduler vary.
 
 ### Visual comparison
 
