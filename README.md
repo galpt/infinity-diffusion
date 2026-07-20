@@ -57,7 +57,7 @@ The Infinity sampler uses a single evaluation per step with:
    This is mathematically identical to the Euler step but written in the
    denoised-prediction form used by DPM-Solver.
 
-2. **Variance stabiliser (original infinity-diffusion).**  After each
+2. **Variance stabiliser (original to Infinity Diffusion).**  After each
    denoising step, a per-channel asymptotic correction pulls each channel's
    standard deviation toward its running EMA:
 
