@@ -13,8 +13,10 @@
 shading gradients and 3D depth while the sine-perturbed scheduler concentrates
 steps toward the final cleanup phase for texture and fine detail.
 
-**Any step count, one setting.**  Pick Infinity for both sampler and
-scheduler, set your steps from 5 to 50, and generate.
+**15-30 steps recommended.**  The variance stabiliser needs enough steps
+for its EMA to converge (minimum 10, optimal range 15-30).  Below 10 the
+correction is too weak to matter.  Above 30 the scheduler is already at
+maximum perturbation and extra steps follow diminishing returns.
 
 **SD, SDXL, Anima.**  The same no-knobs design works across all three model
 families — only the sampler and scheduler matter, nothing else to configure.
