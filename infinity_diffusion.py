@@ -220,7 +220,7 @@ class InfinitySampler:
             sigmas[-1] = 0.0
 
         total_steps = sigmas.numel() - 1
-        ema_std = None
+        variance_ema = None
         v_low_prev = None
         h_prev = None
 
@@ -235,8 +235,8 @@ class InfinitySampler:
                 callback({"x": x, "i": i, "sigma": s_cur, "sigma_hat": s_cur, "denoised": denoised})
 
             # BLDN — bounded variance normalisation
-            denoised, ema_std = _bounded_variance_stabilize(
-                denoised, ema_std, i, total_steps,
+            denoised, variance_ema = _bounded_variance_stabilize(
+                denoised, variance_ema, i, total_steps,
             )
 
             s_cur_val = s_cur.item()
