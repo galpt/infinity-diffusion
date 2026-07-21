@@ -44,16 +44,14 @@ def _bounded_variance_stabilize(
         d = d.transpose(1, 2).reshape(B * T, C, H, W)
         folded = True
 
-    eps_std = 1e-5
+    eps_std = 6.1035e-5  # float16 min normal — prevents flush-to-zero on CUDA
     mean = d.mean(dim=(0, 2, 3), keepdim=True)
     centered = d - mean
     current_std = centered.std(dim=(0, 2, 3)).clamp(min=eps_std)
 
     if step_index == 0 or ema_std is None:
-        result = denoised
-        if folded:
-            result = result.view(B, T, C, H, W).transpose(1, 2).contiguous()
-        return result, current_std.detach().clone()
+        # Bootstrap: denoised is already in its original shape — no fold needed.
+        return denoised, current_std.detach().clone()
 
     momentum = 1.0 - (1.0 / max(1.0, float(total_steps)))
     new_ema = momentum * ema_std + (1.0 - momentum) * current_std
