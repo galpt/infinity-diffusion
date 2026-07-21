@@ -148,7 +148,7 @@ class InfinityScheduler:
         gamma = max(1.0, min(2.0, 1.0 + (float(self.steps) - 8.0) / 22.0))
         # Cosine descent in phase-space
         theta = u * (math.pi / 2.0)
-        cosine_decay = torch.cos(theta) ** gamma
+        cosine_decay = torch.cos(theta).clamp(min=0.0) ** gamma
 
         if self._mode == "timestep":
             timesteps = self._timestep_end + (self._timestep_start - self._timestep_end) * cosine_decay
