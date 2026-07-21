@@ -43,6 +43,7 @@ def _variance_stabilize(
     ema_std: torch.Tensor | None,
     momentum: float,
     progress: float,
+    total_steps: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Per-channel variance stabilisation — original infinity-diffusion.
 
@@ -63,6 +64,10 @@ def _variance_stabilize(
         EMA momentum in ``[0, 1]`` — ``1 - 1 / steps``.
     progress : float
         Sampling progress in ``[0, 1]`` — ``i / (total_steps - 1)``.
+    total_steps : int or None
+        Total number of sampling steps.  Used for the step-awareness factor
+        that naturally reduces correction at low step counts where the EMA
+        cannot converge (works poorly with Turbo / LCM models).
 
     Returns
     -------
@@ -106,8 +111,16 @@ def _variance_stabilize(
     # As progress → 1:  ramp → 0.83 (approaches max)
     progress_strength = progress / (progress + 0.2)
 
-    # Combined strength is the product of both asymptotes
-    strength = deviation_strength * progress_strength
+    # Step-awareness: naturally reduce correction at low step counts
+    # where the EMA cannot converge before sampling ends.
+    # This makes Infinity model-agnostic — works with standard models
+    # (15-30 steps) without over-correcting Turbo / LCM models (4-8 steps).
+    # Limit concept: approaches 1.0 asymptotically as steps increase.
+    steps_actual = total_steps if total_steps is not None else 8
+    step_strength = steps_actual / (steps_actual + 8)
+
+    # Combined strength is the product of all three asymptotes
+    strength = deviation_strength * progress_strength * step_strength
 
     # Move current_std toward new_ema by `strength` of the gap
     target_std = current_std + (new_ema - current_std) * strength
@@ -334,7 +347,7 @@ class InfinitySampler:
                 momentum = 1.0 - 1.0 / total_steps
                 progress = i / total_steps
                 denoised, variance_ema = _variance_stabilize(
-                    denoised, variance_ema, momentum, progress,
+                    denoised, variance_ema, momentum, progress, total_steps,
                 )
 
             ratio = s_next / s_cur
