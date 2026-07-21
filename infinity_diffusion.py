@@ -109,7 +109,6 @@ class InfinityScheduler:
         sigma_fn=None,
         timestep_start: float | None = None,
         timestep_end: float | None = None,
-        rho: float | None = None,
     ):
         if steps < 1:
             raise ValueError(f"steps must be >= 1, got {steps}")
@@ -185,6 +184,12 @@ class InfinitySampler:
     ) -> torch.Tensor:
         """Run the infinity (micro) sampling loop.
 
+        Note on velocity extraction: ``v = (x - denoised) / sigma`` assumes
+        the model is an x0-predictor (standard UNet diffusion).  For flow-
+        matching / velocity-predicting models, the velocity will be scaled
+        by ``(sigma - 1) / sigma``.  Future work may add a dedicated flow-
+        matching path.
+
         Parameters
         ----------
         denoise_fn : callable
@@ -192,13 +197,14 @@ class InfinitySampler:
         x : torch.Tensor
             Initial latent (typically noise scaled by sigmas[0]).
         sigmas : torch.Tensor
-            1-D monotonic decreasing sequence of length N+1 (last element 0).
+            1-D monotonic decreasing sequence of length N+1 (last element 0;
+            non-zero terminal sigmas from sliced schedules are clamped).
         callback : callable, optional
             ``callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma_hat, 'denoised': denoised})``
 
         Returns
         -------
-        torch.Tensor
+        x : torch.Tensor
             The denoised latent after iterating through all sigma steps.
         """
         if sigmas.ndim != 1 or sigmas.numel() < 2:
@@ -209,7 +215,7 @@ class InfinitySampler:
             sigmas[-1] = 0.0
 
         total_steps = sigmas.numel() - 1
-        variance_ema = None
+        ema_std = None
         v_low_prev = None
         h_prev = None
 
@@ -224,8 +230,8 @@ class InfinitySampler:
                 callback({"x": x, "i": i, "sigma": s_cur, "sigma_hat": s_cur, "denoised": denoised})
 
             # BLDN — bounded variance normalisation
-            denoised, variance_ema = _bounded_variance_stabilize(
-                denoised, variance_ema, i, total_steps,
+            denoised, ema_std = _bounded_variance_stabilize(
+                denoised, ema_std, i, total_steps,
             )
 
             s_cur_val = s_cur.item()
