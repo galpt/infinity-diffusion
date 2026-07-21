@@ -73,7 +73,7 @@ The Infinity sampler uses a single evaluation per step with:
    - **Progress ramp**: `prog / (prog + 0.2)` — late steps get stronger
      correction, preventing interference with early structure formation.
 
-   Both ramps are smooth asymptotic functions — no hard thresholds, no
+   Both ramps are smooth asymptotic functions without hard thresholds or
    clamping discontinuities.  A `[0.1, 10.0]` clamp on the correction
    factor prevents numerical extreme cases.
 
