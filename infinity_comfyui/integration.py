@@ -11,7 +11,7 @@ import torch
 from infinity_diffusion import InfinitySampler, InfinityScheduler
 
 __all__ = ["sample_infinity", "infinity_scheduler"]
-__version__ = "4.0.0-micro"
+__version__ = "4.1.0-micro"
 
 
 @torch.no_grad()

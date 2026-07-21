@@ -20,7 +20,7 @@ import torch.nn.functional as F
 
 
 __all__ = ["InfinityScheduler", "InfinitySampler"]
-__version__ = "4.0.0-micro"
+__version__ = "4.1.0-micro"
 
 
 def _append_zero(x: torch.Tensor) -> torch.Tensor:
@@ -135,6 +135,10 @@ class InfinityScheduler:
             self.sigma_fn = None
             self._timestep_start = None
             self._timestep_end = None
+
+        # Kept for forward compatibility with power-law fallback use cases.
+        # It is unused in the primary TDS (cosine) execution path.
+        self.rho = rho
 
     @property
     def sigmas(self) -> torch.Tensor:
@@ -272,8 +276,9 @@ class InfinitySampler:
                 norm_delta = torch.norm(delta_v_low.view(delta_v_low.shape[0], -1), dim=1).view(-1, 1, 1, 1)
                 norm_v_low = torch.norm(v_low.view(v_low.shape[0], -1), dim=1).view(-1, 1, 1, 1)
 
-                rho = norm_delta / (norm_v_low + 1e-5)
-                phi = torch.exp(-self.lambda_phi * (rho ** 2))
+                # FP16 safety epsilon to prevent FTZ
+                kappa = norm_delta / (norm_v_low + 6.1035e-5)
+                phi = torch.exp(-self.lambda_phi * (kappa ** 2))
 
                 v_low_corrected = v_low + phi * (h / (2.0 * h_prev)) * delta_v_low
                 v_step = v_low_corrected + (self.texture_momentum * v_high)
