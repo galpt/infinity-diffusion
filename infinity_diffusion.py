@@ -20,7 +20,7 @@ import torch.nn.functional as F
 
 
 __all__ = ["InfinityScheduler", "InfinitySampler"]
-__version__ = "4.1.0-micro"
+__version__ = "1.0.0"
 
 
 def _append_zero(x: torch.Tensor) -> torch.Tensor:
