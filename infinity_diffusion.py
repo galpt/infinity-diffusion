@@ -109,6 +109,7 @@ class InfinityScheduler:
         sigma_fn=None,
         timestep_start: float | None = None,
         timestep_end: float | None = None,
+        rho: float | None = None,
     ):
         if steps < 1:
             raise ValueError(f"steps must be >= 1, got {steps}")
