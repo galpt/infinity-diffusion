@@ -94,8 +94,8 @@ f(u) = u - s * sin(pi * u) / pi    u in [0, 1]
 ```
 
 At u=0 the derivative is (1 - s): the first step covers less sigma range,
-reducing the initial denoising shock.  At u=1 the derivative is (1 + s): the
-last step covers more sigma range, giving the final cleanup noticeably more
+reducing the initial step size.  At u=1 the derivative is (1 + s): the
+last step covers more sigma range, giving the final cleanup more
 room.  The strength s adapts to the step count:
 
 | Steps | s | First step gap | Last step gap |
@@ -105,7 +105,7 @@ room.  The strength s adapts to the step count:
 | 30 | 0.60 | 0.40x linear | 1.60x linear |
 
 All sigmas pass through the model's native sigma function, so every noise
-level is from the model's training set &mdash; no jagged edges.
+level is from the model's training set with no jagged edges.
 
 ## Benchmark and visual comparison
 
@@ -135,8 +135,8 @@ finer hair, lace, and fabric patterns rather than unstructured noise.
 $$ \text{Gradient CV} = \frac{\sigma(\nabla I)}{\mu(\nabla I)} $$
 
 the coefficient of variation of the Sobel gradient magnitude.  Higher values
-mean the image has more contrast between detailed and smooth regions — the
-signature of volumetric depth.
+mean the image has more contrast between detailed and smooth regions, which
+corresponds to volumetric depth.
 
 ### Visual comparison
 
@@ -173,7 +173,7 @@ lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low 
 </table>
 
 > [!NOTE]
-> At first glance the differences between the five images may look similar, and it would be easy to dismiss the project entirely on that basis.  The value, however, is not in the visual comparison itself but in the concept it represents.  An exponential-integrator sampler with a per-channel variance stabiliser, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
+> The differences between the five images may look subtle at first glance.  The value is not in the visual comparison itself but in the concept: an exponential-integrator sampler with a per-channel variance stabiliser, paired with a sine-perturbed scheduler that balances step budget toward the final cleanup.
 
 ## License
 
