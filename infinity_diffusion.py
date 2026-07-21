@@ -152,6 +152,10 @@ class InfinityScheduler:
 
         if self._mode == "timestep":
             timesteps = self._timestep_end + (self._timestep_start - self._timestep_end) * cosine_decay
+            # Clamp to valid range — floating-point edge cases (e.g. cos(pi/2)^gamma)
+            # can produce near-zero values that extrapolate beyond the model's log_sigmas.
+            lo, hi = (self._timestep_end, self._timestep_start) if self._timestep_end < self._timestep_start else (self._timestep_start, self._timestep_end)
+            timesteps = timesteps.clamp(min=lo, max=hi)
             sigmas = self.sigma_fn(timesteps)
         else:
             sigmas = self._sigma_min + (self._sigma_max - self._sigma_min) * cosine_decay
