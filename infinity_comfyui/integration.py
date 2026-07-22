@@ -1,7 +1,7 @@
 """
-infinity_comfyui/integration.py — ComfyUI adapter for the infinity (micro) branch.
+infinity_comfyui/integration.py — ComfyUI adapter for the infinity (nano) branch.
 
-The infinity-specific additions (TDS, FDI, SMI, BLDN) are original to
+The infinity-specific additions (HTDS, LPVD, AHFRI, NQVP) are original to
 infinity-diffusion.
 """
 
@@ -11,7 +11,7 @@ import torch
 from infinity_diffusion import InfinitySampler, InfinityScheduler
 
 __all__ = ["sample_infinity", "infinity_scheduler"]
-__version__ = "1.0.0"
+__version__ = "1.0.0-nano"
 
 
 @torch.no_grad()

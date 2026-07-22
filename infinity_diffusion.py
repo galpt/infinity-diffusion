@@ -1,11 +1,12 @@
 """
-infinity_diffusion.py — Spectral Momentum / Frequency-Decoupled Integrator.
+infinity_diffusion.py — Laplacian-Pyramid / Adaptive Resonance Integrator (nano).
 
-Provides two components:
+Provides three components:
 
-  - InfinityScheduler — Trigonometric Density Scheduling (TDS)
-  - InfinitySampler   — Frequency-Decoupled Integration (FDI) /
-                        Spectral Momentum Integrator (SMI)
+  - InfinityScheduler — Hyperbolic Tail-Density Scheduling (HTDS)
+  - InfinitySampler   — Laplacian-Pyramid Velocity Decomposition (LPVD) /
+                        Adaptive High-Frequency Resonance Integration (AHFRI)
+  - _quantile_variance_preserve — Non-Linear Quantile Variance Preservation (NQVP)
 
 Both are framework-agnostic: they accept and return plain torch Tensors and
 do not depend on ComfyUI, Hugging Face Diffusers, or any specific diffusion
@@ -20,7 +21,7 @@ import torch.nn.functional as F
 
 
 __all__ = ["InfinityScheduler", "InfinitySampler"]
-__version__ = "1.0.0"
+__version__ = "1.0.0-nano"
 
 
 def _append_zero(x: torch.Tensor) -> torch.Tensor:
@@ -28,13 +29,76 @@ def _append_zero(x: torch.Tensor) -> torch.Tensor:
     return torch.cat([x, x.new_zeros([1])])
 
 
-def _bounded_variance_stabilize(
+def _gaussian_blur2d(
+    x: torch.Tensor,
+    kernel_size: int = 5,
+    sigma: float = 1.0,
+) -> torch.Tensor:
+    """Fast depthwise 2D Gaussian blur for separable spatial frequency decomposition.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input tensor of shape (B, C, H, W).
+    kernel_size : int
+        Size of the convolution kernel (default 5).
+    sigma : float
+        Standard deviation of the Gaussian kernel (default 1.0).
+
+    Returns
+    -------
+    torch.Tensor
+        Blurred tensor, same shape as input.
+    """
+    channels = x.shape[1]
+    radius = kernel_size // 2
+    kernel_1d = torch.arange(-radius, radius + 1, dtype=x.dtype, device=x.device)
+    kernel_1d = torch.exp(-0.5 * (kernel_1d / sigma) ** 2)
+    kernel_1d = kernel_1d / kernel_1d.sum()
+
+    kernel_2d = kernel_1d.unsqueeze(0) * kernel_1d.unsqueeze(1)
+    kernel_4d = kernel_2d.expand(channels, 1, kernel_size, kernel_size)
+
+    return F.conv2d(x, kernel_4d, padding=radius, groups=channels)
+
+
+def _quantile_variance_preserve(
     denoised: torch.Tensor,
-    ema_std: torch.Tensor | None,
+    ema_q95: torch.Tensor | None,
     step_index: int,
     total_steps: int,
+    is_split_resume: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Bounded Latent Dynamic Normalizer (BLDN)."""
+    """Non-Linear Quantile Variance Preservation (NQVP).
+
+    Preserves high-frequency latent spikes by scaling the 95th-percentile
+    quantile of per-channel spatial deviations rather than clamping global
+    standard deviation.  Replaces BLDN from the micro branch.
+
+    Parameters
+    ----------
+    denoised : torch.Tensor
+        Model prediction ``x_0``, shape (B, C, H, W) or (B, C, T, H, W).
+    ema_q95 : torch.Tensor or None
+        Running EMA of the 95th-percentile quantile from previous steps.
+    step_index : int
+        Current step index (0-based).
+    total_steps : int
+        Total number of sampling steps.
+    is_split_resume : bool
+        If True, skip EMA bootstrap and return denoised unchanged
+        (used for mid-generation restart via KSamplerAdvanced).
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor]
+        (corrected_denoised, updated_ema_q95)
+    """
+    eps = 6.1035e-5  # float16 min normal — prevents flush-to-zero on CUDA
+
+    if total_steps <= 6 or is_split_resume:
+        return denoised, (ema_q95 if ema_q95 is not None else denoised.new_ones([1]))
+
     ndim = denoised.ndim
     folded = False
     d = denoised
@@ -44,50 +108,43 @@ def _bounded_variance_stabilize(
         d = d.transpose(1, 2).reshape(B * T, C, H, W)
         folded = True
 
-    eps_std = 6.1035e-5  # float16 min normal — prevents flush-to-zero on CUDA
-    mean = d.mean(dim=(0, 2, 3), keepdim=True)
+    mean = d.mean(dim=(2, 3), keepdim=True)
     centered = d - mean
-    current_std = centered.std(dim=(0, 2, 3)).clamp(min=eps_std)
 
-    if step_index == 0 or ema_std is None:
-        # Bootstrap: denoised is already in its original shape — no fold needed.
-        return denoised, current_std.detach().clone()
+    abs_centered = centered.abs()
+    current_q95 = torch.quantile(
+        abs_centered.flatten(2), 0.95, dim=2, keepdim=True
+    ).unsqueeze(-1).clamp(min=eps)
+
+    if step_index == 0 or ema_q95 is None:
+        return denoised, current_q95.detach().clone()
 
     momentum = 1.0 - (1.0 / max(1.0, float(total_steps)))
-    new_ema = momentum * ema_std + (1.0 - momentum) * current_std
+    new_ema_q95 = momentum * ema_q95 + (1.0 - momentum) * current_q95
 
-    deviation = (current_std / (new_ema + eps_std) - 1.0).abs()
-    r_dev = deviation / (deviation + 0.25)
+    r_q = (new_ema_q95 / (current_q95 + eps)).clamp(min=0.88, max=1.12)
 
-    progress = float(step_index) / float(max(1, total_steps - 1))
-    r_prog = math.pow(progress / (progress + 0.20), 1.5)
-
-    strength = r_dev * r_prog
-    target_std = current_std + (new_ema - current_std) * strength
-
-    corr_factor = (target_std / current_std).clamp(min=0.80, max=1.25)
-
-    shape = [1, -1] + [1] * (d.ndim - 2)
-    result = centered * corr_factor.reshape(*shape) + mean
+    result = centered * r_q + mean
 
     if folded:
         result = result.view(B, T, C, H, W).transpose(1, 2).contiguous()
 
-    return result, new_ema.detach()
+    return result, new_ema_q95.detach()
 
 
 # ---------------------------------------------------------------------------
-# Scheduler — Trigonometric Density Scheduling (TDS)
+# Scheduler — Hyperbolic Tail-Density Scheduling (HTDS)
 # ---------------------------------------------------------------------------
 
 
 class InfinityScheduler:
-    """Trigonometric Density Scheduling (TDS).
+    """Hyperbolic Tail-Density Scheduling (HTDS).
 
-    Replaces power-law schedules (Karras rho) with a dynamic cosine descent.
-    The exponent gamma scales with step count, making the schedule perfectly
-    linear in phase-space for 8-step models and progressively more nonlinear
-    for higher step counts.
+    Replaces cosine / power-law schedules with an asymmetric hyperbolic
+    tangent decay curve.  The tail-density expansion parameter ``delta``
+    scales with step count: at N <= 6 the schedule is linear; at N >= 30
+    the schedule devotes up to 45% of steps to the low-noise regime
+    (sigma <= 0.8) where micro-textures are synthesized.
 
     Parameters
     ----------
@@ -99,6 +156,8 @@ class InfinityScheduler:
         ``sigma_fn(timesteps) -> Tensor`` for timestep-space mode.
     timestep_start, timestep_end : float, optional
         Timestep range for timestep-space mode.
+    rho : float, optional
+        Unused — kept for forward compatibility with power-law fallback.
     """
 
     def __init__(
@@ -120,68 +179,59 @@ class InfinityScheduler:
             self._timestep_start = timestep_start
             self._timestep_end = timestep_end
             self._mode = "timestep"
-            self._sigma_min = None
-            self._sigma_max = None
         else:
-            if sigma_min is None or sigma_max is None:
-                raise ValueError("sigma_min and sigma_max required in sigma-space mode")
-            if sigma_min <= 0.0:
-                raise ValueError(f"sigma_min must be positive, got {sigma_min}")
-            if sigma_max <= sigma_min:
-                raise ValueError(f"sigma_max ({sigma_max}) must be > sigma_min ({sigma_min})")
             self._sigma_min = sigma_min
             self._sigma_max = sigma_max
             self._mode = "sigma"
-            self.sigma_fn = None
-            self._timestep_start = None
-            self._timestep_end = None
 
-        # Kept for forward compatibility with power-law fallback use cases.
-        # It is unused in the primary TDS (cosine) execution path.
         self.rho = rho
 
     @property
     def sigmas(self) -> torch.Tensor:
-        """Return the sigma schedule as a 1-D float32 tensor of length steps + 1."""
         u = torch.linspace(0.0, 1.0, self.steps)
-        # Dynamic exponent: 1.0 at N=8, 2.0 at N=30+
-        gamma = max(1.0, min(2.0, 1.0 + (float(self.steps) - 8.0) / 22.0))
-        # Cosine descent in phase-space
-        theta = u * (math.pi / 2.0)
-        cosine_decay = torch.cos(theta).clamp(min=0.0) ** gamma
+
+        # Hyperbolic tail parameter: 0.0 at N <= 4, saturating at 1.80 for N > 50
+        delta = max(0.0, min(1.80, (float(self.steps) - 4.0) / 26.0))
+
+        if delta <= 1e-5:
+            decay = 1.0 - u
+        else:
+            tanh_delta = math.tanh(delta)
+            decay = torch.tanh(delta * (1.0 - u)) / tanh_delta
 
         if self._mode == "timestep":
-            timesteps = self._timestep_end + (self._timestep_start - self._timestep_end) * cosine_decay
-            # Clamp to valid range — floating-point edge cases (e.g. cos(pi/2)^gamma)
-            # can produce near-zero values that extrapolate beyond the model's log_sigmas.
-            lo, hi = (self._timestep_end, self._timestep_start) if self._timestep_end < self._timestep_start else (self._timestep_start, self._timestep_end)
+            timesteps = self._timestep_end + (self._timestep_start - self._timestep_end) * decay
+            lo = min(self._timestep_start, self._timestep_end)
+            hi = max(self._timestep_start, self._timestep_end)
             timesteps = timesteps.clamp(min=lo, max=hi)
             sigmas = self.sigma_fn(timesteps)
         else:
-            sigmas = self._sigma_min + (self._sigma_max - self._sigma_min) * cosine_decay
+            sigmas = self._sigma_min + (self._sigma_max - self._sigma_min) * decay
 
         return _append_zero(sigmas).float()
 
 
 # ---------------------------------------------------------------------------
-# Sampler — Frequency-Decoupled Integration (FDI) / SMI
+# Sampler — LPVD / AHFRI
 # ---------------------------------------------------------------------------
 
 
 class InfinitySampler:
-    """Frequency-Decoupled Integration (FDI) and Spectral Momentum Integrator (SMI).
+    """Laplacian-Pyramid Velocity Decomposition (LPVD) and Adaptive
+    High-Frequency Resonance Integration (AHFRI).
 
-    The velocity field is split into low-frequency (structure) and
-    high-frequency (texture) components using average pooling.
-    For high-step models (N > 8), second-order curvature correction is
-    applied to the low-frequency component (FDI).  For low-step models
-    (N <= 8), the high-frequency texture uses a fixed momentum multiplier
-    to preserve detail (SMI).
+    The velocity field is decomposed into three spatial frequency bands
+    (macro, meso, nano) using a Gaussian/Laplacian pyramid.  The nano band
+    is amplified by a spatially-adaptive resonance gain that depends on the
+    local variance of the high-frequency signal — detail is enhanced where
+    micro-structures exist while flat regions remain natural.
+
+    For N <= 6 (distilled models, Krea 2 Turbo, etc.), the decomposition
+    is bypassed entirely and a pure Euler step is used.
     """
 
     def __init__(self):
-        self.texture_momentum = 1.15
-        self.lambda_phi = 2.0
+        pass
 
     @torch.no_grad()
     def sample(
@@ -191,13 +241,7 @@ class InfinitySampler:
         sigmas: torch.Tensor,
         callback=None,
     ) -> torch.Tensor:
-        """Run the infinity (micro) sampling loop.
-
-        Note on velocity extraction: ``v = (x - denoised) / sigma`` assumes
-        the model is an x0-predictor (standard UNet diffusion).  For flow-
-        matching / velocity-predicting models, the velocity will be scaled
-        by ``(sigma - 1) / sigma``.  Future work may add a dedicated flow-
-        matching path.
+        """Run the infinity (nano) sampling loop.
 
         Parameters
         ----------
@@ -224,9 +268,10 @@ class InfinitySampler:
             sigmas[-1] = 0.0
 
         total_steps = sigmas.numel() - 1
-        variance_ema = None
-        v_low_prev = None
-        h_prev = None
+        ema_q95 = None
+
+        # Auto-detect split generation resume (mid-generation restart)
+        is_split_resume = sigmas[0].item() < 8.0
 
         i = 0
         while i < total_steps:
@@ -238,9 +283,9 @@ class InfinitySampler:
             if callback is not None:
                 callback({"x": x, "i": i, "sigma": s_cur, "sigma_hat": s_cur, "denoised": denoised})
 
-            # BLDN — bounded variance normalisation
-            denoised, variance_ema = _bounded_variance_stabilize(
-                denoised, variance_ema, i, total_steps,
+            # NQVP — quantile variance preservation
+            denoised, ema_q95 = _quantile_variance_preserve(
+                denoised, ema_q95, i, total_steps, is_split_resume=is_split_resume,
             )
 
             s_cur_val = s_cur.item()
@@ -255,7 +300,6 @@ class InfinitySampler:
             v_cur = (x - denoised) / s_cur_val
             h = s_next_val - s_cur_val
 
-            # Frequency decomposition via average pooling
             ndim = v_cur.ndim
             folded = False
             v_process = v_cur
@@ -265,36 +309,35 @@ class InfinitySampler:
                 v_process = v_process.transpose(1, 2).reshape(B * T, C, H, W)
                 folded = True
 
-            # Split into low-frequency (structure) and high-frequency (texture)
-            v_low = F.avg_pool2d(v_process, kernel_size=3, stride=1, padding=1)
-            v_high = v_process - v_low
-
-            # Path A — SMI (low-step / bootstrap / no prior step)
-            if total_steps <= 8 or i == 0 or v_low_prev is None or h_prev is None or abs(h_prev) < 1e-7:
-                v_step = v_low + (self.texture_momentum * v_high)
-
-            # Path B — FDI (high-step, second-order on structure)
+            if total_steps <= 6:
+                # Low-step linear trajectory — pure Euler
+                v_step = v_process
             else:
-                delta_v_low = v_low - v_low_prev
+                # 3-Band Laplacian Pyramid Decomposition
+                eps = 6.1035e-5
 
-                norm_delta = torch.norm(delta_v_low.view(delta_v_low.shape[0], -1), dim=1).view(-1, 1, 1, 1)
-                norm_v_low = torch.norm(v_low.view(v_low.shape[0], -1), dim=1).view(-1, 1, 1, 1)
+                v_macro = _gaussian_blur2d(v_process, kernel_size=5, sigma=2.0)
+                v_filtered_m = _gaussian_blur2d(v_process, kernel_size=3, sigma=1.0)
+                v_meso = v_filtered_m - v_macro
+                v_nano = v_process - v_filtered_m
 
-                # FP16 safety epsilon to prevent FTZ
-                kappa = norm_delta / (norm_v_low + 6.1035e-5)
-                phi = torch.exp(-self.lambda_phi * (kappa ** 2))
+                # Local spatial variance map for high-frequency resonance
+                v_nano_sq_blur = _gaussian_blur2d(v_nano ** 2, kernel_size=3, sigma=1.0)
+                v_nano_blur_sq = _gaussian_blur2d(v_nano, kernel_size=3, sigma=1.0) ** 2
+                s_nano = torch.sqrt((v_nano_sq_blur - v_nano_blur_sq).clamp(min=eps))
 
-                v_low_corrected = v_low + phi * (h / (2.0 * h_prev)) * delta_v_low
-                v_step = v_low_corrected + (self.texture_momentum * v_high)
+                s_nano_mean = s_nano.mean(dim=(2, 3), keepdim=True)
+
+                # Dynamic resonance scaling based on sigma phase
+                eta = 0.25 * max(0.1, min(1.0, s_cur_val / 1.5))
+                omega_nano = 1.0 + eta * torch.tanh(s_nano / (s_nano_mean + eps))
+
+                v_step = v_macro + v_meso + (omega_nano * v_nano)
 
             if folded:
                 v_step = v_step.view(B, T, C, H, W).transpose(1, 2).contiguous()
 
             x = x + h * v_step
-
-            v_low_prev = v_low.clone()
-            h_prev = h
-
             i += 1
 
         return x

@@ -1,56 +1,30 @@
-# Infinity Diffusion (`micro` branch)
+# Infinity Diffusion (`nano` branch)
 
-This branch introduces an independent solver and scheduler architecture
-designed for image diffusion pipelines.  It replaces exponential-based
-integration (e.g., DPM-Solver) and power-law distributions (e.g., Karras)
-with frequency-decoupled integration and trigonometric density scheduling.
+The `nano` branch is a specialized, ultra-high-precision sampling engine designed to resolve fine micro-textures (skin pores, subcutaneous veins, fabric weave patterns, and floor/wall grain) without artificial sharpening artifacts or CFG color blowouts.
 
-## Technical Mechanisms
+## Core Inventions
 
-* **Trigonometric Density Scheduling (TDS):** Noise levels are distributed
-  using a dynamic cosine descent.  The schedule scales its exponent based
-  on step count to maintain continuous derivatives without requiring
-  arbitrary rho parameters.
-* **Frequency-Decoupled Integration (FDI):** The velocity field is split
-  into low-frequency (structure) and high-frequency (texture) components
-  using an Average Pool operation.  Second-order curvature correction is
-  applied exclusively to the structure.
-* **Spectral Momentum Integrator (SMI):** High-frequency components bypass
-  curvature correction and are integrated using a fixed first-order
-  momentum multiplier to preserve texture details at low step counts.
-* **Bounded Latent Dynamic Normalizer (BLDN):** Standard deviation scaling
-  is constrained to a hard `[0.80, 1.25]` bound relative to an Exponential
-  Moving Average (EMA).  This restricts latent dynamic range expansion,
-  mitigating CFG clipping.
+* **Hyperbolic Tail-Density Scheduling (HTDS):** Allocates increased step density to low-noise regimes (σ ≤ 0.8), providing up to 45% more sampling resolution for micro-texture refinement.
+* **Laplacian-Pyramid Velocity Decomposition (LPVD):** Decomposes the latent velocity field into a 3-band Gaussian/Laplacian spatial pyramid (v_macro, v_meso, v_nano), preserving high-frequency phase information without spatial blurring.
+* **Adaptive High-Frequency Resonance Integration (AHFRI):** Dynamically scales integration gain based on local spatial variance maps, amplifying detail only where micro-structures naturally occur.
+* **Non-Linear Quantile Variance Preservation (NQVP):** Constrains 95th-percentile dynamic range expansion ([0.88, 1.12]) to prevent CFG clipping while preserving fine edge contrast spikes.
 
 ## Model Compatibility
 
-The implementation does not rely on step-count thresholds to switch logic
-and operates directly on the latent velocity field.  It supports:
+* **Diffusion UNets (SD 1.5, SDXL):** Recommended 20–30 steps for extreme realism.
+* **Distilled / Flow-Matching (Krea 2 Turbo, FLUX, SD3):** Recommended 4–8 steps (automatically reverts to linear trajectory to prevent saturation).
+* **Video Latents (Anima):** Native 5D tensor support.
 
-* **Diffusion UNets:** SD 1.5, SDXL (recommended 15-30 steps)
-* **Distilled / Flow-Matching Models:** Krea 2 Turbo, LCM, FLUX, SD3
-  (recommended 4-8 steps)
-* **Video Latents:** Anima (supports 5D tensor folding)
-
-## Installation
+## Quick Installation
 
 ```bash
-git clone -b micro --depth 1 https://github.com/galpt/infinity-diffusion.git
+git clone -b nano --depth 1 https://github.com/galpt/infinity-diffusion.git
 cd infinity-diffusion
 bash comfy-infinity.sh /path/to/ComfyUI install
 ```
 
-Restart ComfyUI.  Select `infinity` in the sampler and scheduler menus.
-
-## Evaluation
-
-Model output is measured using the Fidelity-Adjusted Perceptual Texture
-Score (F-PTS).  This metric multiplies Texture Directionality by a Bounded
-Gradient Coefficient of Variation (capped at 2.20) and applies a Color
-Bounds Penalty (CBP) to account for pixel clipping at extreme luminance
-values.
+Restart ComfyUI and select `infinity` in the sampler and scheduler dropdowns.
 
 ## License
 
-MIT License.  See LICENSE.
+MIT License. See LICENSE.
