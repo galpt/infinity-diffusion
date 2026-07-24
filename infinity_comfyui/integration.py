@@ -1,17 +1,16 @@
 """
-infinity_comfyui/integration.py — ComfyUI adapter for the infinity (nano) branch.
+infinity_comfyui/integration.py — ComfyUI adapter for the infinity (omega) branch.
 
-The infinity-specific additions (HTDS, LPVD, AHFRI, NQVP) are original to
-infinity-diffusion.
+The infinity-specific additions (ACS, DoG) build on the proven nano
+foundation (LPVD, AHFRI, NQVP, HTDS).
 """
-
 from __future__ import annotations
 
 import torch
 from infinity_diffusion import InfinitySampler, InfinityScheduler
 
 __all__ = ["sample_infinity", "infinity_scheduler"]
-__version__ = "1.0.0-nano"
+__version__ = "1.0.0-omega"
 
 
 @torch.no_grad()

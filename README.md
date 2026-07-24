@@ -1,21 +1,22 @@
-# Infinity Diffusion (`nano` branch)
+# Infinity Diffusion (`omega` branch)
 
-The `nano` branch provides a specialized sampler and scheduler designed to preserve high-frequency spatial details (micro-textures, fabric weave, and surface grain) without introducing artificial sharpening artifacts or Classifier-Free Guidance (CFG) color blowouts.
+The `omega` branch builds on the proven `nano` foundation with two targeted enhancements: per-channel mean+std stabilisation to prevent CFG colour cast drift, and isotropic band-pass edge enhancement without directional bias.
 
 ## When to Use It
 
-**Detail-oriented generations (portraits, fabrics, textures).** The LPVD pyramid isolates high-frequency spatial content and the AHFRI resonance map amplifies it selectively — useful when output sharpness and micro-surface grain matter more than rendering speed.
+> [!TIP]
+> For a quick start, set Steps to `25` and CFG to `7.0`. These work well for most cases. Lower steps may reduce quality.
 
-**20–30 steps for full benefit.** HTDS needs enough steps to concentrate density into the low-noise regime, and the Laplacian pyramid requires multiple iterations for the resonance map to converge. Below 15 steps the AHFRI gain has less impact; the sampler still produces clean results but behaves closer to a linear trajectory.
-
-**4–8 steps on distilled models (Krea 2 Turbo).** Low-step count automatically bypasses the multi-band pyramid — the sampler runs a linear Euler path with NQVP guarding against CFG oversaturation. Useful as a drop-in replacement for the default Euler sampler when colour blowout is a concern.
-
-**High CFG values.** NQVP's 95th-percentile quantile clamp ([0.88, 1.12]) constrains dynamic range expansion more aggressively than channel-wise standard deviation clamps, making it effective when CFG is set above 6.0.
+- **High CFG values (6.0+).** Keeps colours and shadows natural when other samplers start to look burnt or oversaturated.
+- **Portraits, textures, and detailed illustrations.** Preserves fine lines, fabric weave, and surface grain without artificial sharpening.
+- **You want something different from the default options.** Omega's ACS and DoG enhancements produce a distinct look — deeper contrast, richer colours, and cleaner line separation.
+- **20+ steps recommended.** The scheduler needs enough steps to distribute properly. Results stay clean at lower steps but the full benefit shows at 20&ndash;30 steps.
+- **Works with fast models too (Krea 2 Turbo, 4&ndash;8 steps).** Automatically switches to a safe linear path, no configuration needed.
 
 ## Quick Installation
 
 ```bash
-git clone -b nano --depth 1 https://github.com/galpt/infinity-diffusion.git
+git clone -b omega --depth 1 https://github.com/galpt/infinity-diffusion.git
 cd infinity-diffusion
 bash comfy-infinity.sh /path/to/ComfyUI install
 
@@ -25,20 +26,22 @@ Restart ComfyUI and select `infinity` in both the sampler and scheduler dropdown
 
 ## Model Compatibility
 
-* **Diffusion UNets (e.g., SD 1.5, SDXL).** Recommended 20–30 steps for detailed generations.
-* **Distilled / Flow-Matching Models (e.g., Krea 2 Turbo).** Recommended 4–8 steps (automatically bypasses multi-band decomposition and uses a linear trajectory to prevent over-saturation).
+* **Diffusion UNets (e.g., SD 1.5, SDXL).** Recommended 20&ndash;30 steps.
+* **Distilled / Flow-Matching Models (e.g., Krea 2 Turbo).** Recommended 4&ndash;8 steps (automatically bypasses decomposition and enhancement to run linear trajectory).
 * **Video Latents (e.g., Anima).** Native 5D tensor support via shape folding.
 
 ## Technical Mechanisms
 
-* **Hyperbolic Tail-Density Scheduling (HTDS).** Allocates up to 45% higher step density to low-noise regimes ($\sigma \le 0.8$), allowing the model more sampling steps during the fine texture synthesis phase.
+* **Hyperbolic Tail-Density Scheduling (HTDS).** Allocates up to 45% higher step density to low-noise regimes ($\sigma \le 0.8$), allowing the model more sampling steps during the fine texture synthesis phase. At N $\le$ 4 the schedule reverts to pure linear for distilled model safety.
+* **Adaptive Channel Stabilization (ACS).** Tracks a running EMA of per-channel mean and standard deviation. When CFG guidance pushes a channel outside the EMA envelope, the correction gently pulls it back — preventing colour casts and oversaturation without the progressive detail suppression of traditional EMA clamps.
 * **Laplacian-Pyramid Velocity Decomposition (LPVD).** Decomposes the latent velocity field into a 3-band Gaussian/Laplacian spatial pyramid (<b>v</b><sub>macro</sub>, <b>v</b><sub>meso</sub>, <b>v</b><sub>nano</sub>), preserving high-frequency phase information without spatial blurring.
+* **Difference-of-Gaussians (DoG) Band Enhancement.** Applies an isotropic band-pass filter (sigma ratio 2:1) to the nano-band of LPVD, enhancing edges and fine detail without the directional bias of Sobel-based methods.
 * **Adaptive High-Frequency Resonance Integration (AHFRI).** Dynamically scales integration gain based on local spatial variance maps, amplifying detail specifically where high-frequency latent structures naturally occur.
-* **Non-Linear Quantile Variance Preservation (NQVP).** Constrains 95th-percentile dynamic range expansion to a strict $[0.88, 1.12]$ window, mitigating CFG color blowouts while preserving fine edge contrast spikes.
+* **Non-Linear Quantile Variance Preservation (NQVP).** Constrains 95th-percentile dynamic range expansion to a strict $[0.88, 1.12]$ window, mitigating CFG colour blowouts while preserving fine edge contrast spikes.
 
-## Evaluation Metric (M-TRI)
+## Evaluation Metric (F-PTLS)
 
-Model output quality is evaluated using the **Micro-Texture Resolution Index (M-TRI)**, which measures 2D FFT high-frequency power density and local gradient vector coherence while applying an exponential penalty for extreme pixel luminance clipping ($I \le 2$ or $I \ge 253$).
+Model quality is evaluated using the **Fidelity-Adjusted Texture & Line Score (F-PTLS)**, measuring FFT power density, structure tensor coherence, and gradient contrast with an exponential penalty for pixel luminance clipping ($I \le 2$ or $I \ge 253$).
 
 ## License
 

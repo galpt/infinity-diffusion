@@ -1,16 +1,20 @@
 """
-infinity_diffusion.py — Laplacian-Pyramid / Adaptive Resonance Integrator (nano).
+infinity_diffusion.py — Adaptive Channel Stabilization / DoG-Enhanced LPVD (omega).
 
-Provides three components:
+Builds on the proven nano foundation (HTDS, LPVD, NQVP) with two
+targeted enhancements:
 
-  - InfinityScheduler — Hyperbolic Tail-Density Scheduling (HTDS)
-  - InfinitySampler   — Laplacian-Pyramid Velocity Decomposition (LPVD) /
-                        Adaptive High-Frequency Resonance Integration (AHFRI)
-  - _quantile_variance_preserve — Non-Linear Quantile Variance Preservation (NQVP)
+  - Adaptive Channel Stabilization (ACS) — per-channel mean EMA
+    correction to prevent CFG colour cast drift without suppressing
+    fine detail.
+  - Difference-of-Gaussians (DoG) band enhancement on the LPVD nano
+    band — isotropic edge enhancement without directional bias.
 
-Both are framework-agnostic: they accept and return plain torch Tensors and
-do not depend on ComfyUI, Hugging Face Diffusers, or any specific diffusion
-codebase.  Works with 2D latents (SD, SDXL), 3D latents (Anima).
+All components:
+  - InfinityScheduler : Hyperbolic Tail-Density Scheduling (HTDS)
+  - InfinitySampler   : LPVD / DoG / AHFRI / ACS
+  - _quantile_variance_preserve       : Non-Linear Quantile Variance Preservation (NQVP)
+  - _adaptive_channel_stabilize       : Adaptive Channel Stabilization (ACS)
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ import torch.nn.functional as F
 
 
 __all__ = ["InfinityScheduler", "InfinitySampler"]
-__version__ = "1.0.0-nano"
+__version__ = "1.0.0-omega"
 
 
 def _append_zero(x: torch.Tensor) -> torch.Tensor:
@@ -132,6 +136,88 @@ def _quantile_variance_preserve(
     return result, new_ema_q95.detach()
 
 
+def _adaptive_channel_stabilize(
+    denoised: torch.Tensor,
+    ema_mean: torch.Tensor | None,
+    ema_std: torch.Tensor | None,
+    step_index: int,
+    total_steps: int,
+    is_split_resume: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Adaptive Channel Stabilization (ACS).
+
+    Tracks a running EMA of per-channel mean and standard deviation
+    of the denoised latent.  When CFG guidance pushes a channel's mean
+    or spread outside the EMA envelope, the correction gently pulls
+    it back — preventing colour casts and oversaturation without the
+    progressive detail suppression of traditional EMA clamps.
+
+    Unlike BLDN (which used a step-count-ramped strength that
+    progressively suppressed fine detail), ACS applies a uniform
+    per-step correction with wider thresholds and no temporal ramp.
+
+    Parameters
+    ----------
+    denoised : torch.Tensor
+        Model prediction ``x_0``, shape (B, C, H, W) or (B, C, T, H, W).
+    ema_mean, ema_std : torch.Tensor or None
+        Running EMA of per-channel mean and standard deviation.
+    step_index : int
+        Current step index (0-based).
+    total_steps : int
+        Total number of sampling steps.
+    is_split_resume : bool
+        If True, skip bootstrap and return denoised unchanged.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        (corrected_denoised, updated_ema_mean, updated_ema_std)
+    """
+    eps = 6.1035e-5
+
+    if total_steps <= 6 or is_split_resume:
+        return (
+            denoised,
+            ema_mean if ema_mean is not None else denoised.new_ones([1]),
+            ema_std if ema_std is not None else denoised.new_ones([1]),
+        )
+
+    ndim = denoised.ndim
+    folded = False
+    d = denoised
+
+    if ndim == 5:
+        B, C, T, H, W = d.shape
+        d = d.transpose(1, 2).reshape(B * T, C, H, W)
+        folded = True
+
+    current_mean = d.mean(dim=(2, 3), keepdim=True)
+    centered = d - current_mean
+    current_std = centered.std(dim=(2, 3), keepdim=True).clamp(min=eps)
+
+    if step_index == 0 or ema_mean is None or ema_std is None:
+        # Bootstrap — return denoised unchanged in its original shape
+        return denoised, current_mean.detach().clone(), current_std.detach().clone()
+
+    momentum = 1.0 - (1.0 / max(1.0, float(total_steps)))
+    new_ema_mean = momentum * ema_mean + (1.0 - momentum) * current_mean
+    new_ema_std = momentum * ema_std + (1.0 - momentum) * current_std
+
+    # Mean correction: offset-based pull toward EMA (no sign-inversion risk)
+    mean_correction = (new_ema_mean - current_mean) * 0.50
+
+    # Std correction: constrain spread to prevent oversaturation
+    corr_std = (new_ema_std / (current_std + eps)).clamp(min=0.90, max=1.10)
+
+    result = centered * corr_std + current_mean + mean_correction
+
+    if folded:
+        result = result.view(B, T, C, H, W).transpose(1, 2).contiguous()
+
+    return result, new_ema_mean.detach(), new_ema_std.detach()
+
+
 # ---------------------------------------------------------------------------
 # Scheduler — Hyperbolic Tail-Density Scheduling (HTDS)
 # ---------------------------------------------------------------------------
@@ -212,22 +298,27 @@ class InfinityScheduler:
 
 
 # ---------------------------------------------------------------------------
-# Sampler — LPVD / AHFRI
+# Sampler — LPVD / DoG / AHFRI / ACS
 # ---------------------------------------------------------------------------
 
 
 class InfinitySampler:
-    """Laplacian-Pyramid Velocity Decomposition (LPVD) and Adaptive
-    High-Frequency Resonance Integration (AHFRI).
+    """Laplacian-Pyramid Velocity Decomposition (LPVD), Difference-of-Gaussians
+    (DoG) band enhancement, Adaptive High-Frequency Resonance Integration
+    (AHFRI), and Adaptive Channel Stabilization (ACS).
 
-    The velocity field is decomposed into three spatial frequency bands
-    (macro, meso, nano) using a Gaussian/Laplacian pyramid.  The nano band
-    is amplified by a spatially-adaptive resonance gain that depends on the
-    local variance of the high-frequency signal — detail is enhanced where
-    micro-structures exist while flat regions remain natural.
+    Builds on the proven nano foundation:
+
+      - LPVD separates the velocity field into macro / meso / nano bands
+        using a Gaussian / Laplacian pyramid.
+      - DoG applies an isotropic band-pass filter to the nano band,
+        enhancing edges without directional bias.
+      - AHFRI applies spatially-adaptive resonance gain to the nano band.
+      - ACS stabilises per-channel mean and std to prevent CFG colour
+        cast drift without suppressing fine detail.
 
     For N <= 6 (distilled models, Krea 2 Turbo, etc.), the decomposition
-    is bypassed entirely and a pure Euler step is used.
+    and enhancement are bypassed and a pure Euler step is used.
     """
 
     def __init__(self):
@@ -241,7 +332,7 @@ class InfinitySampler:
         sigmas: torch.Tensor,
         callback=None,
     ) -> torch.Tensor:
-        """Run the infinity (nano) sampling loop.
+        """Run the infinity (omega) sampling loop.
 
         Parameters
         ----------
@@ -269,6 +360,8 @@ class InfinitySampler:
 
         total_steps = sigmas.numel() - 1
         ema_q95 = None
+        ema_ch_mean = None
+        ema_ch_std = None
 
         # Auto-detect split generation resume (mid-generation restart)
         is_split_resume = sigmas[0].item() < 8.0
@@ -286,6 +379,12 @@ class InfinitySampler:
             # NQVP — quantile variance preservation
             denoised, ema_q95 = _quantile_variance_preserve(
                 denoised, ema_q95, i, total_steps, is_split_resume=is_split_resume,
+            )
+
+            # ACS — per-channel mean + std stabilization
+            denoised, ema_ch_mean, ema_ch_std = _adaptive_channel_stabilize(
+                denoised, ema_ch_mean, ema_ch_std, i, total_steps,
+                is_split_resume=is_split_resume,
             )
 
             s_cur_val = s_cur.item()
@@ -331,6 +430,16 @@ class InfinitySampler:
                 # Dynamic resonance scaling based on sigma phase
                 eta = 0.25 * max(0.1, min(1.0, s_cur_val / 1.5))
                 omega_nano = 1.0 + eta * torch.tanh(s_nano / (s_nano_mean + eps))
+
+                # DoG (Difference of Gaussians) band enhancement on nano band
+                # Isotropic band-pass filter: blur(nano, sigma=0.5) - blur(nano, sigma=1.0)
+                # Classic ratio sigma2/sigma1 = 2.0 for edge enhancement.
+                # The dog_strength scales with sigma phase (same eta as AHFRI).
+                v_nano_blur_narrow = _gaussian_blur2d(v_nano, kernel_size=3, sigma=0.5)
+                v_nano_blur_wide = _gaussian_blur2d(v_nano, kernel_size=5, sigma=1.0)
+                dog = v_nano_blur_narrow - v_nano_blur_wide
+                dog_strength = 0.15 * eta  # scales with sigma phase
+                v_nano = v_nano + dog_strength * dog
 
                 v_step = v_macro + v_meso + (omega_nano * v_nano)
 
