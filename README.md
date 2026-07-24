@@ -1,6 +1,8 @@
 # Infinity Diffusion (`omega` branch)
 
-The `omega` branch builds on the proven `nano` foundation with two targeted enhancements: per-channel mean+std stabilisation to prevent CFG colour cast drift, and isotropic band-pass edge enhancement without directional bias.
+The `omega` branch builds on the proven `nano` foundation with two targeted enhancements:
+1. per-channel mean+std stabilisation to prevent CFG colour cast drift; and
+2. isotropic band-pass edge enhancement without directional bias.
 
 ## When to Use It
 
