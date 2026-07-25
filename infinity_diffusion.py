@@ -71,7 +71,6 @@ def _quantile_variance_preserve(
     ema_q95: torch.Tensor | None,
     step_index: int,
     total_steps: int,
-    flow_model: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Non-Linear Quantile Variance Preservation (NQVP).
 
@@ -90,12 +89,6 @@ def _quantile_variance_preserve(
     total_steps : int
         Total number of sampling steps.
     is_split_resume : bool
-        Deprecated — kept for backward compatibility.  Use ``flow_model``
-        for model-type-aware parameter selection instead.
-    flow_model : bool
-        If True, use wider quantile bounds calibrated for flow-matching
-        models (Anima, Krea, FLUX) with 16-channel latents.
-    is_split_resume : bool, optional
         Deprecated — kept for backward compatibility.
 
     Returns
@@ -107,11 +100,6 @@ def _quantile_variance_preserve(
 
     if total_steps <= 6:
         return denoised, (ema_q95 if ema_q95 is not None else denoised.new_ones([1]))
-
-    # Wider quantile bounds for flow models (Anima, Krea, FLUX) which have
-    # fundamentally different latent statistics (16ch Wan21 format vs SDXL 4ch).
-    clamp_lo = 0.80 if flow_model else 0.88
-    clamp_hi = 1.20 if flow_model else 1.12
 
     ndim = denoised.ndim
     folded = False
@@ -136,7 +124,7 @@ def _quantile_variance_preserve(
     momentum = 1.0 - (1.0 / max(1.0, float(total_steps)))
     new_ema_q95 = momentum * ema_q95 + (1.0 - momentum) * current_q95
 
-    r_q = (new_ema_q95 / (current_q95 + eps)).clamp(min=clamp_lo, max=clamp_hi)
+    r_q = (new_ema_q95 / (current_q95 + eps)).clamp(min=0.88, max=1.12)
 
     result = centered * r_q + mean
 
@@ -152,7 +140,6 @@ def _adaptive_channel_stabilize(
     ema_std: torch.Tensor | None,
     step_index: int,
     total_steps: int,
-    flow_model: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Adaptive Channel Stabilization (ACS).
 
@@ -193,12 +180,6 @@ def _adaptive_channel_stabilize(
             ema_std if ema_std is not None else denoised.new_ones([1]),
         )
 
-    # Flow models (Anima, Krea, FLUX) have different latent statistics
-    # (16ch Wan21 format).  Use gentler correction to avoid oversaturation.
-    mean_strength = 0.25 if flow_model else 0.50
-    clamp_lo = 0.95 if flow_model else 0.90
-    clamp_hi = 1.05 if flow_model else 1.10
-
     ndim = denoised.ndim
     folded = False
     d = denoised
@@ -220,11 +201,11 @@ def _adaptive_channel_stabilize(
     new_ema_mean = momentum * ema_mean + (1.0 - momentum) * current_mean
     new_ema_std = momentum * ema_std + (1.0 - momentum) * current_std
 
-    # Mean correction: offset-based pull toward EMA
-    mean_correction = (new_ema_mean - current_mean) * mean_strength
+    # Mean correction: offset-based pull toward EMA (no sign-inversion risk)
+    mean_correction = (new_ema_mean - current_mean) * 0.50
 
     # Std correction: constrain spread to prevent oversaturation
-    corr_std = (new_ema_std / (current_std + eps)).clamp(min=clamp_lo, max=clamp_hi)
+    corr_std = (new_ema_std / (current_std + eps)).clamp(min=0.90, max=1.10)
 
     result = centered * corr_std + current_mean + mean_correction
 
@@ -395,15 +376,19 @@ class InfinitySampler:
             if callback is not None:
                 callback({"x": x, "i": i, "sigma": s_cur, "sigma_hat": s_cur, "denoised": denoised})
 
-            # NQVP — quantile variance preservation
-            denoised, ema_q95 = _quantile_variance_preserve(
-                denoised, ema_q95, i, total_steps, flow_model=is_flow,
-            )
-
-            # ACS — per-channel mean + std stabilization
-            denoised, ema_ch_mean, ema_ch_std = _adaptive_channel_stabilize(
-                denoised, ema_ch_mean, ema_ch_std, i, total_steps, flow_model=is_flow,
-            )
+            # NQVP + ACS — quantile variance and per-channel stabilisation.
+            # These are designed for standard diffusion models (SD/SDXL) where
+            # sigma * epsilon creates large latent swings at early steps that
+            # need aggressive correction.  Flow-matching models (Anima, Krea,
+            # FLUX) follow a straight-line trajectory with naturally bounded
+            # latents — the corrections are unnecessary and cause oversaturation.
+            if not is_flow:
+                denoised, ema_q95 = _quantile_variance_preserve(
+                    denoised, ema_q95, i, total_steps,
+                )
+                denoised, ema_ch_mean, ema_ch_std = _adaptive_channel_stabilize(
+                    denoised, ema_ch_mean, ema_ch_std, i, total_steps,
+                )
 
             s_cur_val = s_cur.item()
             s_next_val = s_next.item()
