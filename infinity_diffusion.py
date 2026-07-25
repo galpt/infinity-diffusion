@@ -1,21 +1,19 @@
 """
-infinity_diffusion.py — Adaptive Channel Stabilization / DoG-Enhanced LPVD (omega).
+infinity_diffusion.py — Unified Velocity / Quantile Correction Integrator (omega).
 
 Builds on the proven nano foundation (HTDS, LPVD, NQVP) with two
 targeted enhancements:
 
-  - Adaptive Channel Stabilization (ACS) — per-channel mean EMA
-    correction to prevent CFG colour cast drift without suppressing
-    fine detail.
+  - Adaptive Velocity Normalization (AVN) — per-channel velocity spread
+    dampener that prevents CFG oversaturation across all model types.
   - Difference-of-Gaussians (DoG) band enhancement on the LPVD nano
     band — isotropic edge enhancement without directional bias.
 
 All components:
   - InfinityScheduler : Hyperbolic Tail-Density Scheduling (HTDS)
-  - InfinitySampler   : LPVD / DoG / AHFRI / ACS
-  - _quantile_variance_preserve       : Non-Linear Quantile Variance Preservation (NQVP)
-  - _adaptive_channel_stabilize       : Adaptive Channel Stabilization (ACS)
-  - _adaptive_velocity_normalize      : Adaptive Velocity Normalization (AVN)
+  - InfinitySampler   : LPVD / DoG / AHFRI / AVN
+  - _quantile_variance_preserve  : Non-Linear Quantile Variance Preservation (NQVP)
+  - _adaptive_velocity_normalize : Adaptive Velocity Normalization (AVN)
 """
 
 from __future__ import annotations
@@ -135,105 +133,25 @@ def _quantile_variance_preserve(
     return result, new_ema_q95.detach()
 
 
-def _adaptive_channel_stabilize(
-    denoised: torch.Tensor,
-    ema_mean: torch.Tensor | None,
-    ema_std: torch.Tensor | None,
-    step_index: int,
-    total_steps: int,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Adaptive Channel Stabilization (ACS).
-
-    Tracks a running EMA of per-channel mean and standard deviation
-    of the denoised latent.  When CFG guidance pushes a channel's mean
-    or spread outside the EMA envelope, the correction gently pulls
-    it back — preventing colour casts and oversaturation without the
-    progressive detail suppression of traditional EMA clamps.
-
-    Unlike BLDN (which used a step-count-ramped strength that
-    progressively suppressed fine detail), ACS applies a uniform
-    per-step correction with wider thresholds and no temporal ramp.
-
-    Parameters
-    ----------
-    denoised : torch.Tensor
-        Model prediction ``x_0``, shape (B, C, H, W) or (B, C, T, H, W).
-    ema_mean, ema_std : torch.Tensor or None
-        Running EMA of per-channel mean and standard deviation.
-    step_index : int
-        Current step index (0-based).
-    total_steps : int
-        Total number of sampling steps.
-    is_split_resume : bool
-        If True, skip bootstrap and return denoised unchanged.
-
-    Returns
-    -------
-    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        (corrected_denoised, updated_ema_mean, updated_ema_std)
-    """
-    eps = 6.1035e-5
-
-    if total_steps <= 6:
-        return (
-            denoised,
-            ema_mean if ema_mean is not None else denoised.new_ones([1]),
-            ema_std if ema_std is not None else denoised.new_ones([1]),
-        )
-
-    ndim = denoised.ndim
-    folded = False
-    d = denoised
-
-    if ndim == 5:
-        B, C, T, H, W = d.shape
-        d = d.transpose(1, 2).reshape(B * T, C, H, W)
-        folded = True
-
-    current_mean = d.mean(dim=(2, 3), keepdim=True)
-    centered = d - current_mean
-    current_std = centered.std(dim=(2, 3), keepdim=True).clamp(min=eps)
-
-    if step_index == 0 or ema_mean is None or ema_std is None:
-        # Bootstrap — return denoised unchanged in its original shape
-        return denoised, current_mean.detach().clone(), current_std.detach().clone()
-
-    momentum = 1.0 - (1.0 / max(1.0, float(total_steps)))
-    new_ema_mean = momentum * ema_mean + (1.0 - momentum) * current_mean
-    new_ema_std = momentum * ema_std + (1.0 - momentum) * current_std
-
-    # Mean correction: offset-based pull toward EMA (no sign-inversion risk)
-    mean_correction = (new_ema_mean - current_mean) * 0.50
-
-    # Std correction: constrain spread to prevent oversaturation
-    corr_std = (new_ema_std / (current_std + eps)).clamp(min=0.90, max=1.10)
-
-    result = centered * corr_std + current_mean + mean_correction
-
-    if folded:
-        result = result.view(B, T, C, H, W).transpose(1, 2).contiguous()
-
-    return result, new_ema_mean.detach(), new_ema_std.detach()
-
-
 def _adaptive_velocity_normalize(
     v: torch.Tensor,
     ema_v_std: torch.Tensor | None,
     step_index: int,
     total_steps: int,
+    clamp_min: float = 0.70,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Adaptive Velocity Normalization (AVN) for flow models.
+    """Adaptive Velocity Normalization (AVN).
 
     Tracks a running EMA of per-channel velocity standard deviation.
     When CFG pushes the velocity field to extreme values, AVN dampens
     the spread while preserving the per-pixel direction — preventing
-    oversaturation in flow-matching models without distorting the
-    trajectory.
+    oversaturation without distorting the trajectory.
 
-    Unlike NQVP/ACS (which correct the denoised prediction for standard
-    diffusion models), AVN corrects the VELOCITY field directly, which
-    is the right target for flow models where the trajectory is driven
-    by velocity.
+    Works for all model types.  The ``clamp_min`` parameter controls
+    how aggressively the velocity spread is dampened:
+
+      - flow models (Anima, Krea, FLUX): clamp_min=0.70
+      - standard diffusion (SD/SDXL):   clamp_min=0.85
 
     Parameters
     ----------
@@ -245,6 +163,9 @@ def _adaptive_velocity_normalize(
         Current step index (0-based).
     total_steps : int
         Total number of sampling steps.
+    clamp_min : float
+        Minimum correction factor.  Higher = more dampening.
+        Default 0.70 (gentle, for flow models).
 
     Returns
     -------
@@ -279,7 +200,7 @@ def _adaptive_velocity_normalize(
     # Only dampen (corr < 1), never amplify beyond 1.0 (max=1.0).
     # This prevents CFG from amplifying the velocity to extreme values
     # while preserving the direction of every pixel.
-    corr = (new_ema_v_std / (v_std + eps)).clamp(min=0.70, max=1.0)
+    corr = (new_ema_v_std / (v_std + eps)).clamp(min=clamp_min, max=1.0)
 
     result = v_centered * corr + v_mean
 
@@ -376,7 +297,7 @@ class InfinityScheduler:
 class InfinitySampler:
     """Laplacian-Pyramid Velocity Decomposition (LPVD), Difference-of-Gaussians
     (DoG) band enhancement, Adaptive High-Frequency Resonance Integration
-    (AHFRI), and Adaptive Channel Stabilization (ACS).
+    (AHFRI), and Adaptive Velocity Normalization (AVN).
 
     Builds on the proven nano foundation:
 
@@ -385,10 +306,11 @@ class InfinitySampler:
       - DoG applies an isotropic band-pass filter to the nano band,
         enhancing edges without directional bias.
       - AHFRI applies spatially-adaptive resonance gain to the nano band.
-      - ACS stabilises per-channel mean and std to prevent CFG colour
-        cast drift without suppressing fine detail.
-      - AVN dampens per-channel velocity spread in flow models (Anima,
-        Krea, FLUX) to prevent CFG oversaturation.
+      - AVN dampens per-channel velocity spread to prevent CFG
+        oversaturation across all model types.
+      - NQVP constrains the 95th-percentile quantile on the denoised
+        prediction for standard diffusion models (SD/SDXL) where
+        sigma * epsilon creates large early-step swings.
 
     For N <= 6 (distilled models, Krea 2 Turbo, etc.), the decomposition
     and enhancement are bypassed and a pure Euler step is used.
@@ -433,8 +355,6 @@ class InfinitySampler:
 
         total_steps = sigmas.numel() - 1
         ema_q95 = None
-        ema_ch_mean = None
-        ema_ch_std = None
         ema_v_std = None
 
         # Detect model type from sigma range.
@@ -453,18 +373,12 @@ class InfinitySampler:
             if callback is not None:
                 callback({"x": x, "i": i, "sigma": s_cur, "sigma_hat": s_cur, "denoised": denoised})
 
-            # NQVP + ACS — quantile variance and per-channel stabilisation.
-            # These are designed for standard diffusion models (SD/SDXL) where
-            # sigma * epsilon creates large latent swings at early steps that
-            # need aggressive correction.  Flow-matching models (Anima, Krea,
-            # FLUX) follow a straight-line trajectory with naturally bounded
-            # latents — the corrections are unnecessary and cause oversaturation.
+            # NQVP — quantile variance preservation.
+            # Only for standard diffusion models (SD/SDXL) where sigma*epsilon
+            # creates large early-step latent swings.  Flow models skip this.
             if not is_flow:
                 denoised, ema_q95 = _quantile_variance_preserve(
                     denoised, ema_q95, i, total_steps,
-                )
-                denoised, ema_ch_mean, ema_ch_std = _adaptive_channel_stabilize(
-                    denoised, ema_ch_mean, ema_ch_std, i, total_steps,
                 )
 
             s_cur_val = s_cur.item()
@@ -488,13 +402,13 @@ class InfinitySampler:
                 v_process = v_process.transpose(1, 2).reshape(B * T, C, H, W)
                 folded = True
 
-            # AVN — velocity spread dampener for flow models.
-            # Applied before LPVD so the decomposition works on a clean
-            # velocity field.
-            if is_flow:
-                v_process, ema_v_std = _adaptive_velocity_normalize(
-                    v_process, ema_v_std, i, total_steps,
-                )
+            # AVN — velocity spread dampener for all model types.
+            # SD/SDXL: stronger clamp (0.85) — velocity is noisier at early steps
+            # Flow:     gentler clamp (0.70) — velocity trajectory is naturally cleaner
+            avn_strength = 0.85 if not is_flow else 0.70
+            v_process, ema_v_std = _adaptive_velocity_normalize(
+                v_process, ema_v_std, i, total_steps, clamp_min=avn_strength,
+            )
 
             if total_steps <= 6:
                 # Low-step linear trajectory — pure Euler

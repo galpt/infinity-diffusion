@@ -1,7 +1,7 @@
 # Infinity Diffusion (`omega` branch)
 
 The `omega` branch builds on the proven `nano` foundation with two targeted enhancements:
-1. per-channel mean+std stabilisation to prevent CFG colour cast drift; and
+1. velocity-based per-channel spread dampening to prevent CFG oversaturation; and
 2. isotropic band-pass edge enhancement without directional bias.
 
 ## When to Use It
@@ -35,7 +35,7 @@ Restart ComfyUI and select `infinity` in both the sampler and scheduler dropdown
 ## Technical Mechanisms
 
 * **Hyperbolic Tail-Density Scheduling (HTDS).** Allocates up to 45% higher step density to low-noise regimes ($\sigma \le 0.8$), allowing the model more sampling steps during the fine texture synthesis phase. At N $\le$ 4 the schedule reverts to pure linear for distilled model safety.
-* **Adaptive Channel Stabilization (ACS).** Tracks a running EMA of per-channel mean and standard deviation. When CFG guidance pushes a channel outside the EMA envelope, the correction gently pulls it back — preventing colour casts and oversaturation without the progressive detail suppression of traditional EMA clamps.
+* **Adaptive Velocity Normalization (AVN).** Tracks a running EMA of per-channel velocity standard deviation. When CFG guidance pushes the velocity spread outside the EMA envelope, AVN dampens it — preventing oversaturation across all model types without distorting the trajectory direction.
 * **Laplacian-Pyramid Velocity Decomposition (LPVD).** Decomposes the latent velocity field into a 3-band Gaussian/Laplacian spatial pyramid (<b>v</b><sub>macro</sub>, <b>v</b><sub>meso</sub>, <b>v</b><sub>nano</sub>), preserving high-frequency phase information without spatial blurring.
 * **Difference-of-Gaussians (DoG) Band Enhancement.** Applies an isotropic band-pass filter (sigma ratio 2:1) to the nano-band of LPVD, enhancing edges and fine detail at all orientations equally.
 * **Adaptive High-Frequency Resonance Integration (AHFRI).** Dynamically scales integration gain based on local spatial variance maps, amplifying detail specifically where high-frequency latent structures naturally occur.
