@@ -10,7 +10,7 @@ import torch
 from infinity_diffusion import InfinitySampler, InfinityScheduler
 
 __all__ = ["sample_infinity", "infinity_scheduler"]
-__version__ = "1.0.0-omega"
+__version__ = "1.0.1-omega"
 
 
 @torch.no_grad()

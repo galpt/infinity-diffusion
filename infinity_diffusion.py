@@ -25,7 +25,7 @@ import torch.nn.functional as F
 
 
 __all__ = ["InfinityScheduler", "InfinitySampler"]
-__version__ = "1.0.0-omega"
+__version__ = "1.0.1-omega"
 
 
 def _append_zero(x: torch.Tensor) -> torch.Tensor:
@@ -363,9 +363,6 @@ class InfinitySampler:
         ema_ch_mean = None
         ema_ch_std = None
 
-        # Auto-detect split generation resume (mid-generation restart)
-        is_split_resume = sigmas[0].item() < 8.0
-
         i = 0
         while i < total_steps:
             s_cur = sigmas[i]
@@ -378,13 +375,12 @@ class InfinitySampler:
 
             # NQVP — quantile variance preservation
             denoised, ema_q95 = _quantile_variance_preserve(
-                denoised, ema_q95, i, total_steps, is_split_resume=is_split_resume,
+                denoised, ema_q95, i, total_steps,
             )
 
             # ACS — per-channel mean + std stabilization
             denoised, ema_ch_mean, ema_ch_std = _adaptive_channel_stabilize(
                 denoised, ema_ch_mean, ema_ch_std, i, total_steps,
-                is_split_resume=is_split_resume,
             )
 
             s_cur_val = s_cur.item()
