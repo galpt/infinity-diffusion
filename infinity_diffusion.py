@@ -15,6 +15,7 @@ All components:
   - InfinitySampler   : LPVD / DoG / AHFRI / ACS
   - _quantile_variance_preserve       : Non-Linear Quantile Variance Preservation (NQVP)
   - _adaptive_channel_stabilize       : Adaptive Channel Stabilization (ACS)
+  - _adaptive_velocity_normalize      : Adaptive Velocity Normalization (AVN)
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ import torch.nn.functional as F
 
 
 __all__ = ["InfinityScheduler", "InfinitySampler"]
-__version__ = "1.0.1-omega"
+__version__ = "1.1.0-omega"
 
 
 def _append_zero(x: torch.Tensor) -> torch.Tensor:
@@ -215,6 +216,79 @@ def _adaptive_channel_stabilize(
     return result, new_ema_mean.detach(), new_ema_std.detach()
 
 
+def _adaptive_velocity_normalize(
+    v: torch.Tensor,
+    ema_v_std: torch.Tensor | None,
+    step_index: int,
+    total_steps: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Adaptive Velocity Normalization (AVN) for flow models.
+
+    Tracks a running EMA of per-channel velocity standard deviation.
+    When CFG pushes the velocity field to extreme values, AVN dampens
+    the spread while preserving the per-pixel direction — preventing
+    oversaturation in flow-matching models without distorting the
+    trajectory.
+
+    Unlike NQVP/ACS (which correct the denoised prediction for standard
+    diffusion models), AVN corrects the VELOCITY field directly, which
+    is the right target for flow models where the trajectory is driven
+    by velocity.
+
+    Parameters
+    ----------
+    v : torch.Tensor
+        Velocity field, shape (B, C, H, W) or (B, C, T, H, W).
+    ema_v_std : torch.Tensor or None
+        Running EMA of per-channel velocity standard deviation.
+    step_index : int
+        Current step index (0-based).
+    total_steps : int
+        Total number of sampling steps.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor]
+        (corrected_velocity, updated_ema_v_std)
+    """
+    eps = 6.1035e-5
+
+    if total_steps <= 6:
+        return v, (ema_v_std if ema_v_std is not None else v.new_ones([1]))
+
+    ndim = v.ndim
+    folded = False
+    d = v
+
+    if ndim == 5:
+        B, C, T, H, W = d.shape
+        d = d.transpose(1, 2).reshape(B * T, C, H, W)
+        folded = True
+
+    v_mean = d.mean(dim=(2, 3), keepdim=True)
+    v_centered = d - v_mean
+    v_std = v_centered.std(dim=(2, 3), keepdim=True).clamp(min=eps)
+
+    if step_index == 0 or ema_v_std is None:
+        return v, v_std.detach().clone()
+
+    momentum = 1.0 - (1.0 / max(1.0, float(total_steps)))
+    new_ema_v_std = momentum * ema_v_std + (1.0 - momentum) * v_std
+
+    # Dampen velocity spread: when current std exceeds EMA, pull it back.
+    # Only dampen (corr < 1), never amplify beyond 1.0 (max=1.0).
+    # This prevents CFG from amplifying the velocity to extreme values
+    # while preserving the direction of every pixel.
+    corr = (new_ema_v_std / (v_std + eps)).clamp(min=0.70, max=1.0)
+
+    result = v_centered * corr + v_mean
+
+    if folded:
+        result = result.view(B, T, C, H, W).transpose(1, 2).contiguous()
+
+    return result, new_ema_v_std.detach()
+
+
 # ---------------------------------------------------------------------------
 # Scheduler — Hyperbolic Tail-Density Scheduling (HTDS)
 # ---------------------------------------------------------------------------
@@ -313,6 +387,8 @@ class InfinitySampler:
       - AHFRI applies spatially-adaptive resonance gain to the nano band.
       - ACS stabilises per-channel mean and std to prevent CFG colour
         cast drift without suppressing fine detail.
+      - AVN dampens per-channel velocity spread in flow models (Anima,
+        Krea, FLUX) to prevent CFG oversaturation.
 
     For N <= 6 (distilled models, Krea 2 Turbo, etc.), the decomposition
     and enhancement are bypassed and a pure Euler step is used.
@@ -359,6 +435,7 @@ class InfinitySampler:
         ema_q95 = None
         ema_ch_mean = None
         ema_ch_std = None
+        ema_v_std = None
 
         # Detect model type from sigma range.
         # Standard diffusion (SD/SDXL):   sigma_max ~14.6
@@ -410,6 +487,14 @@ class InfinitySampler:
                 B, C, T, H, W = v_process.shape
                 v_process = v_process.transpose(1, 2).reshape(B * T, C, H, W)
                 folded = True
+
+            # AVN — velocity spread dampener for flow models.
+            # Applied before LPVD so the decomposition works on a clean
+            # velocity field.
+            if is_flow:
+                v_process, ema_v_std = _adaptive_velocity_normalize(
+                    v_process, ema_v_std, i, total_steps,
+                )
 
             if total_steps <= 6:
                 # Low-step linear trajectory — pure Euler
