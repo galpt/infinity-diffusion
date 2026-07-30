@@ -81,9 +81,9 @@ def _quantile_variance_preserve(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Non-Linear Quantile Variance Preservation (NQVP).
 
-    Preserves high-frequency latent spikes by scaling the 95th-percentile
-    quantile of per-channel spatial deviations rather than clamping global
-    standard deviation.  Replaces BLDN from the micro branch.
+    Constrains the 95th-percentile quantile of per-channel spatial deviations
+    to a [0.88, 1.12] window, mitigating CFG colour blowouts while preserving
+    fine edge contrast spikes.
 
     Parameters
     ----------
@@ -95,8 +95,6 @@ def _quantile_variance_preserve(
         Current step index (0-based).
     total_steps : int
         Total number of sampling steps.
-    is_split_resume : bool
-        Deprecated — kept for backward compatibility.
 
     Returns
     -------
@@ -298,7 +296,7 @@ class InfinityScheduler:
     """Hyperbolic Tail-Density Scheduling (HTDS).
 
     Replaces cosine / power-law schedules with an asymmetric hyperbolic
-    tangent decay curve.  The tail-density expansion parameter ``delta``
+    tangent decay curve.  The tail-density expansion parameter delta
     scales with step count: at N <= 6 the schedule is linear; at N >= 30
     the schedule devotes up to 45% of steps to the low-noise regime
     (sigma <= 0.8) where micro-textures are synthesized.
@@ -313,8 +311,6 @@ class InfinityScheduler:
         ``sigma_fn(timesteps) -> Tensor`` for timestep-space mode.
     timestep_start, timestep_end : float, optional
         Timestep range for timestep-space mode.
-    rho : float, optional
-        Unused — kept for forward compatibility with power-law fallback.
     """
 
     def __init__(
@@ -325,7 +321,6 @@ class InfinityScheduler:
         sigma_fn=None,
         timestep_start: float | None = None,
         timestep_end: float | None = None,
-        rho: float | None = None,
     ):
         if steps < 1:
             raise ValueError(f"steps must be >= 1, got {steps}")
@@ -340,8 +335,6 @@ class InfinityScheduler:
             self._sigma_min = sigma_min
             self._sigma_max = sigma_max
             self._mode = "sigma"
-
-        self.rho = rho
 
     @property
     def sigmas(self) -> torch.Tensor:
@@ -369,29 +362,32 @@ class InfinityScheduler:
 
 
 # ---------------------------------------------------------------------------
-# Sampler — LPVD / DoG / AHFRI / ACS
+# Sampler — LPVD / Coherence-DoG / LISC / AHFRI / AVN / NQVP
 # ---------------------------------------------------------------------------
 
 
 class InfinitySampler:
-    """Laplacian-Pyramid Velocity Decomposition (LPVD), Difference-of-Gaussians
-    (DoG) band enhancement, Adaptive High-Frequency Resonance Integration
-    (AHFRI), and Adaptive Velocity Normalization (AVN).
+    """Core sampling engine with coherence-anchored anisotropic enhancements.
 
-    Builds on the proven nano foundation:
-
-      - LPVD separates the velocity field into macro / meso / nano bands
-        using a Gaussian / Laplacian pyramid.
-      - DoG applies an isotropic band-pass filter to the nano band,
-        enhancing edges without directional bias.
+    Inherits the proven omega foundation:
+      - LPVD separates the velocity field into macro / meso / nano bands.
       - AHFRI applies spatially-adaptive resonance gain to the nano band.
-      - AVN dampens per-channel velocity spread to prevent CFG
-        oversaturation across all model types.
-      - NQVP constrains the 95th-percentile quantile on the denoised
-        prediction for standard diffusion models (SD/SDXL) where
-        sigma * epsilon creates large early-step swings.
+      - AVN dampens per-channel velocity spread to prevent CFG oversaturation.
+      - NQVP constrains the 95th-percentile quantile for standard diffusion.
 
-    For N <= 6 (distilled models, Krea 2 Turbo, etc.), the decomposition
+    Adds aether enhancements:
+      - Coherence-weighted DoG: isotropic band-pass on the nano band,
+        modulated by the structure tensor coherence C.  C is near 1 along
+        coherent edge normals (full enhancement) and near 0 in isotropic
+        regions (suppressed), providing effective anisotropy.
+      - LISC: directional gradient projection onto a virtual light vector
+        during the macro phase (sigma >= 0.80), masked by C to prevent
+        false illumination on noise.
+      - VNN: rescales the enhanced velocity to match the original L2 norm,
+        preserving the ODE trajectory energy.
+      - TZTD: all enhancements decay linearly to zero at sigma <= 0.15.
+
+    For N <= 6 (distilled models, Krea 2 Turbo, etc.), all decomposition
     and enhancement are bypassed and a pure Euler step is used.
     """
 
@@ -428,7 +424,7 @@ class InfinitySampler:
         light_angle_deg : float, optional
             Virtual light direction in degrees (default 135.0).
         lisc_strength : float, optional
-            LISC shading intensity (default 0.10).
+            LISC shading intensity multiplier (default 0.06).
 
         Returns
         -------
