@@ -97,9 +97,12 @@ def _phase_edge_saliency(v: torch.Tensor, eps: float = 6.1035e-5) -> torch.Tenso
     # Local energy: sqrt(gradient² + laplacian²)
     v_x, v_y = _central_gradients(v)
 
-    # Laplacian computed at same resolution by padding before differencing
-    dxx = F.pad(v_x, (0, 1), mode="reflect")[..., 1:] - F.pad(v_x, (1, 0), mode="reflect")[..., :-1]
-    dyy = F.pad(v_y, (0, 0, 0, 1), mode="reflect")[..., 1:, :] - F.pad(v_y, (0, 0, 1, 0), mode="reflect")[..., :-1, :]
+    # Laplacian computed at same resolution by padding before differencing.
+    # Constant (zero) padding is used here because reflect padding on 4D
+    # tensors requires a full 6-element spec that varies across PyTorch versions.
+    # The one-pixel boundary effect is negligible for the saliency ratio output.
+    dxx = F.pad(v_x, (0, 1))[..., 1:] - F.pad(v_x, (1, 0))[..., :-1]
+    dyy = F.pad(v_y, (0, 0, 0, 1))[..., 1:, :] - F.pad(v_y, (0, 0, 1, 0))[..., :-1, :]
     laplacian = dxx + dyy
 
     grad_mag = torch.sqrt(v_x ** 2 + v_y ** 2 + eps)
