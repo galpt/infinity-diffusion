@@ -33,6 +33,20 @@ The structure tensor coherence is computed at multiple scales (fine, mid, broad)
 
 All enhancements fade smoothly to zero at very low noise levels, preventing the numerical instability that can occur in the final sampling steps.
 
+## References
+
+1. **Laws, K. I.** (1980). *Textured Image Segmentation*. USC Image Processing Institute. — Laws' texture energy masks used for pixel-wise material classification.
+
+2. **Kovesi, P.** (1999). *Image Features From Phase Congruency*. Videre: Journal of Computer Vision Research. — Phase congruency edge detection, used for contrast-invariant edge saliency.
+
+3. **Bigun, J. & Granlund, G. H.** (1987). *Optimal Orientation Detection of Linear Symmetry*. IEEE First International Conference on Computer Vision. — Structure tensor computation for coherence estimation.
+
+4. **Perona, P. & Malik, J.** (1990). *Scale-Space and Edge Detection Using Anisotropic Diffusion*. IEEE Transactions on Pattern Analysis and Machine Intelligence. — Foundational work on coherence-enhancing diffusion.
+
+5. **Karras, T., Aittala, M., Aila, T. & Laine, S.** (2022). *Elucidating the Design Space of Diffusion-Based Generative Models*. NeurIPS. — Stochastic sampling (churn) and noise injection methodology.
+
+6. **Xu, Y., Deng, M., Cheng, X., Tian, Y., Liu, Z. & Jaakkola, T.** (2023). *Restart Sampling for Improving Generative Processes*. NeurIPS. — Restart-based noise injection for detail enhancement.
+
 ## License
 
 MIT License. See LICENSE.
