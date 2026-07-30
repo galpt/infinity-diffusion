@@ -35,17 +35,17 @@ All enhancements fade smoothly to zero at very low noise levels, preventing the 
 
 ## References
 
-1. **Laws, K. I.** (1980). *Textured Image Segmentation*. USC Image Processing Institute. — Laws' texture energy masks used for pixel-wise material classification.
+1. **Laws, K. I.** (1980). *Textured Image Segmentation*. USC Image Processing Institute. — Laws' texture energy masks used for pixel-wise material classification. [Semantic Scholar](https://www.semanticscholar.org/paper/Textured-Image-Segmentation-Laws/7d37a93bcc4e6bca4745fae45e904b9601a7e5c3)
 
-2. **Kovesi, P.** (1999). *Image Features From Phase Congruency*. Videre: Journal of Computer Vision Research. — Phase congruency edge detection, used for contrast-invariant edge saliency.
+2. **Kovesi, P.** (1999). *Image Features From Phase Congruency*. Videre: Journal of Computer Vision Research. — Phase congruency edge detection, used for contrast-invariant edge saliency. [Semantic Scholar](https://www.semanticscholar.org/paper/Image-Features-from-Phase-Congruency-Kovesi/d58f21057012718b2fde87e291248dd84e79a5de)
 
-3. **Bigun, J. & Granlund, G. H.** (1987). *Optimal Orientation Detection of Linear Symmetry*. IEEE First International Conference on Computer Vision. — Structure tensor computation for coherence estimation.
+3. **Bigun, J. & Granlund, G. H.** (1987). *Optimal Orientation Detection of Linear Symmetry*. IEEE First International Conference on Computer Vision. — Structure tensor computation for coherence estimation. [Semantic Scholar](https://www.semanticscholar.org/paper/Optimal-Orientation-Detection-of-Linear-Symmetry-Bigun-Granlund/7fa7fe7e5830aaf105dde56d920dc54f72b9ed87)
 
-4. **Perona, P. & Malik, J.** (1990). *Scale-Space and Edge Detection Using Anisotropic Diffusion*. IEEE Transactions on Pattern Analysis and Machine Intelligence. — Foundational work on coherence-enhancing diffusion.
+4. **Perona, P. & Malik, J.** (1990). *Scale-Space and Edge Detection Using Anisotropic Diffusion*. IEEE Transactions on Pattern Analysis and Machine Intelligence. — Foundational work on coherence-enhancing diffusion. [DOI](https://doi.org/10.1109/34.56205)
 
-5. **Karras, T., Aittala, M., Aila, T. & Laine, S.** (2022). *Elucidating the Design Space of Diffusion-Based Generative Models*. NeurIPS. — Stochastic sampling (churn) and noise injection methodology.
+5. **Karras, T., Aittala, M., Aila, T. & Laine, S.** (2022). *Elucidating the Design Space of Diffusion-Based Generative Models*. NeurIPS. — Stochastic sampling (churn) and noise injection methodology. [arXiv](https://arxiv.org/abs/2206.00364)
 
-6. **Xu, Y., Deng, M., Cheng, X., Tian, Y., Liu, Z. & Jaakkola, T.** (2023). *Restart Sampling for Improving Generative Processes*. NeurIPS. — Restart-based noise injection for detail enhancement.
+6. **Xu, Y., Deng, M., Cheng, X., Tian, Y., Liu, Z. & Jaakkola, T.** (2023). *Restart Sampling for Improving Generative Processes*. NeurIPS. — Restart-based noise injection for detail enhancement. [arXiv](https://arxiv.org/abs/2306.14878)
 
 ## License
 
