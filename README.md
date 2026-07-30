@@ -1,49 +1,70 @@
-# Infinity Diffusion (`omega` branch)
+# Infinity Diffusion (`aether` branch)
 
-The `omega` branch builds on the proven `nano` foundation with two targeted enhancements:
-1. velocity-based per-channel spread dampening to prevent CFG oversaturation; and
-2. isotropic band-pass edge enhancement without directional bias.
+The `aether` branch builds on the proven `omega` foundation (LPVD + AHFRI + DoG + AVN + NQVP) with three targeted enhancements that add directional edge awareness and lighting control without extra sampling passes:
+
+1. **Coherence-weighted DoG** — standard isotropic DoG band-pass on the nano band, modulated by the structure tensor coherence `C`. Edges get full enhancement; noise and flat regions are suppressed, providing effective anisotropy without wavelet artifacts.
+2. **Coherence-masked LISC** — directional gradient projection onto a virtual light vector (`L = (cosθ, sinθ)`), masked by the structure tensor coherence. Shading only affects coherent structure, preventing false illumination on noise.
+3. **VNN + TZTD safety wrappers** — Velocity Norm Normalization preserves the ODE trajectory energy after spatial modifications; Terminal Zero-Gain Decay (gamma) linearly fades all enhancements to zero as sigma drops below 0.15.
 
 ## When to Use It
 
 > [!TIP]
 > For a quick start, set Steps to `25` and CFG to `7.0`. These work well for most cases. Lower steps may reduce quality.
 
-- **High CFG values (6.0+).** Keeps colours and shadows natural when other samplers start to look burnt or oversaturated.
-- **Portraits, textures, and detailed illustrations.** Preserves fine lines, fabric weave, and surface grain without artificial sharpening.
-- **You want something different from the default options.** Omega produces a distinct look — deeper contrast, richer colours, and cleaner line separation.
-- **20+ steps recommended.** The scheduler needs enough steps to distribute properly. Results stay clean at lower steps but the full benefit shows at 20&ndash;30 steps.
-- **Works with fast models too (Krea 2 Turbo, 4&ndash;8 steps).** Automatically switches to a safe linear path, no configuration needed.
+- **Scenes with strong directional lighting.** LISC aligns shadow gradients to a virtual light source, creating coherent illumination from a single sampling pass.
+- **Portraits, textures, and detailed illustrations.** The coherence-weighted DoG preserves fine lines, fabric weave, and surface grain while suppressing background noise.
+- **20+ steps recommended.** The scheduler needs enough steps to distribute properly and the sigma-phase gating (macro → micro phases) benefits from more steps.
+- **Works with fast models too (Krea 2 Turbo, 4&ndash;8 steps).** Automatically switches to a safe linear path, bypassing all enhancements — no configuration needed.
 
 ## Quick Installation
 
 ```bash
-git clone -b omega --depth 1 https://github.com/galpt/infinity-diffusion.git
+git clone -b aether --depth 1 https://github.com/galpt/infinity-diffusion.git
 cd infinity-diffusion
 bash comfy-infinity.sh /path/to/ComfyUI install
-
 ```
 
 Restart ComfyUI and select `infinity` in both the sampler and scheduler dropdowns.
 
 ## Model Compatibility
 
-* **Diffusion UNets (e.g., SD 1.5, SDXL).** Recommended 20&ndash;30 steps.
-* **Distilled / Flow-Matching Models (e.g., Krea 2 Turbo).** Recommended 4&ndash;8 steps (automatically bypasses decomposition and enhancement to run linear trajectory).
-* **Video Latents (e.g., Anima).** Native 5D tensor support via shape folding.
+- **Diffusion UNets (e.g., SD 1.5, SDXL).** Recommended 20&ndash;30 steps. All aether enhancements active.
+- **Distilled / Flow-Matching Models (e.g., Krea 2 Turbo).** Recommended 4&ndash;8 steps (automatically bypasses all decomposition and enhancement — pure Euler trajectory).
+- **Video Latents (e.g., Anima).** Native 5D tensor support via shape folding.
 
 ## Technical Mechanisms
 
-* **Hyperbolic Tail-Density Scheduling (HTDS).** Allocates up to 45% higher step density to low-noise regimes ($\sigma \le 0.8$), allowing the model more sampling steps during the fine texture synthesis phase. At N $\le$ 4 the schedule reverts to pure linear for distilled model safety.
-* **Adaptive Velocity Normalization (AVN).** Tracks a running EMA of per-channel velocity standard deviation. When CFG guidance pushes the velocity spread outside the EMA envelope, AVN dampens it — preventing oversaturation across all model types without distorting the trajectory direction.
-* **Laplacian-Pyramid Velocity Decomposition (LPVD).** Decomposes the latent velocity field into a 3-band Gaussian/Laplacian spatial pyramid (<b>v</b><sub>macro</sub>, <b>v</b><sub>meso</sub>, <b>v</b><sub>nano</sub>), preserving high-frequency phase information without spatial blurring.
-* **Difference-of-Gaussians (DoG) Band Enhancement.** Applies an isotropic band-pass filter (sigma ratio 2:1) to the nano-band of LPVD, enhancing edges and fine detail at all orientations equally.
-* **Adaptive High-Frequency Resonance Integration (AHFRI).** Dynamically scales integration gain based on local spatial variance maps, amplifying detail specifically where high-frequency latent structures naturally occur.
-* **Non-Linear Quantile Variance Preservation (NQVP).** Constrains 95th-percentile dynamic range expansion to a strict $[0.88, 1.12]$ window, mitigating CFG colour blowouts while preserving fine edge contrast spikes.
+### Core (inherited from omega)
+
+- **Hyperbolic Tail-Density Scheduling (HTDS).** Allocates up to 45% higher step density to low-noise regimes ($\sigma \le 0.8$), allowing more sampling steps during fine texture synthesis. At $N \le 4$ the schedule reverts to pure linear for distilled model safety.
+- **Adaptive Velocity Normalization (AVN).** Tracks a running EMA of per-channel velocity standard deviation. When CFG guidance pushes the velocity spread outside the EMA envelope, AVN dampens it — preventing oversaturation without distorting trajectory direction.
+- **Laplacian-Pyramid Velocity Decomposition (LPVD).** Decomposes the latent velocity field into a 3-band Gaussian/Laplacian spatial pyramid ($\mathbf{v}_{\text{macro}}$, $\mathbf{v}_{\text{meso}}$, $\mathbf{v}_{\text{nano}}$).
+- **Adaptive High-Frequency Resonance Integration (AHFRI).** Dynamically scales integration gain on the nano band based on local spatial variance maps.
+- **Non-Linear Quantile Variance Preservation (NQVP).** Constrains 95th-percentile dynamic range expansion to $[0.88, 1.12]$ for standard diffusion models.
+
+### Aether enhancements
+
+- **Coherence-weighted Difference-of-Gaussians (DoG).** The standard isotropic band-pass (blur(nano, &sigma;=0.5) &minus; blur(nano, &sigma;=1.0)) is modulated by the structure tensor coherence $C \in [0, 1]$. $C$ is near 1 along coherent edge normals (full enhancement) and near 0 in isotropic or noisy regions (suppressed). This provides effective anisotropy without wavelet or sub-band decomposition that could imprint fixed spatial patterns.
+
+- **Latent Intrinsic Shading Control (LISC).** During the macro phase ($\sigma \ge 0.8$), spatial gradients of $\mathbf{v}_{\text{macro}}$ are projected onto a virtual 2D light vector $\mathbf{L} = (\cos\theta, \sin\theta)$. The projection is masked by the structure tensor coherence $C$ computed from $\mathbf{v}_{\text{macro}}$, ensuring shading only appears along coherent structure and does not imprint artifacts on noisy or flat regions.
+
+- **Velocity Norm Normalization (VNN).** After all spatial modifications, the enhanced velocity $\mathbf{v}_{\text{step}}$ is rescaled per sample so its L2 norm matches the original UNet prediction $\mathbf{v}_{\text{orig}}$. This allows spatial energy redistribution (sharper edges, directional lighting) while preserving the ODE trajectory magnitude, preventing the exponential gain compounding that causes artifacts.
+
+- **Terminal Zero-Gain Decay (TZTD).** All enhancement strengths are multiplied by $\gamma(\sigma) = \text{clamp}((\sigma - 0.15) / 0.65, 0.0, 1.0)$. At $\sigma \ge 0.80$, enhancements are at full strength. At $\sigma \le 0.15$, the sampler reverts to pure Euler, preventing $1/\sigma$ blowup of spatial modifications at terminal steps.
+
+### Gradient stability
+
+All gradient computations use reflection-padded central differences (not forward differences), ensuring both gradient components are evaluated at exactly the same pixel positions. The structure tensor is smoothed with a Gaussian blur (not a box filter / `avg_pool2d`), avoiding frequency sidelobes that could imprint periodic patterns.
 
 ## Evaluation Metric (F-PTLS)
 
 Model quality is evaluated using the **Fidelity-Adjusted Texture & Line Score (F-PTLS)**, measuring FFT power density, structure tensor coherence, and gradient contrast with an exponential penalty for pixel luminance clipping ($I \le 2$ or $I \ge 253$).
+
+For the aether branch, two additional criteria are measured:
+
+1. **Anisotropic Edge Coherence ($S_{\text{edge}}$).** The alignment between enhanced edge direction and the structure tensor eigenvector. Measures whether the coherence-weighted DoG correctly amplifies the gradient along the edge normal without introducing directional bias.
+
+2. **Directional Shadow Consistency ($S_{\text{shadow}}$).** The alignment of luminance gradients relative to the input light angle $\theta$. Validates that LISC shading is applied coherently across the image rather than creating conflicting shadow directions.
 
 ## License
 
