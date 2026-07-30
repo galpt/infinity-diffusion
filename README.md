@@ -43,7 +43,7 @@ The sampler classifies each pixel by material type (line art, skin, fabric, flat
 
 To detect edges reliably in all conditions (even very faint ones), the sampler uses **phase congruency** — a measure that finds edges regardless of their contrast level. This is different from gradient-based methods that miss weak edges.
 
-The structure tensor coherence is computed at multiple scales (fine, mid, broad) and combined, so both hair strands and body contours are captured with equal accuracy.
+The structure tensor coherence is computed at multiple scales (fine, mid, broad) for noise gating, ensuring both hair strands and body contours correctly suppress noise in flat regions.
 
 All enhancements fade smoothly to zero at very low noise levels, preventing the numerical instability that can occur in the final sampling steps.
 

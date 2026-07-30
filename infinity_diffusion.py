@@ -2,25 +2,29 @@
 infinity_diffusion.py — Aether velocity integrator (v1.2.0-aether).
 
 Extends the proven omega foundation (LPVD, AHFRI, DoG, AVN, NQVP)
-with coherence-anchored anisotropic enhancements:
+with material-aware anisotropic enhancements:
+  - Material classification: Laws' texture energy masks (5×5) classify
+    each pixel as line art, skin, fabric, or flat background at every
+    denoising step, enabling per-material enhancement strategies.
+  - Phase congruency saliency: contrast-invariant edge detection via
+    local energy ratio — finds faint edges (skin creases, subtle line
+    art) with the same strength as bold outlines.
   - Coherence-weighted DoG: isotropic band-pass on the nano band,
-    modulated by the structure tensor coherence C.  Edges get full
-    enhancement; noise/flat regions are suppressed.
+    modulated by both structure tensor coherence and material class.
+    Edges get full enhancement; noise/flat regions are suppressed.
   - Coherence-masked LISC: directional shading on the macro band
     during the macro phase (sigma >= 0.8), masked by C so shading
     only sticks to coherent structure.
   - VNN (Velocity Norm Normalization): rescales the enhanced velocity
-    to match the original L2 norm, preserving the ODE trajectory.
+    to match the AVN-corrected L2 norm, preserving the trajectory.
   - TZTD (Terminal Zero-Gain Decay): all enhancements fade linearly
     to zero as sigma drops below 0.80, reaching strict zero at 0.15.
+  - Coherence-gated noise injection: controlled stochasticity in
+    flat regions, gated by inverse coherence to preserve edges.
 
-All gradient computations use reflection-padded central differences
-(both components at the same pixel positions — no phase cancellation).
-The structure tensor is smoothed with a Gaussian blur (no box filter
-frequency sidelobes).
-
-Compatible with SD/SDXL (sigma_max ~14.6) and flow models
-(sigma_max = 1.0, all enhancements bypassed).
+All gradient computations use reflection-padded central differences.
+The structure tensor is smoothed with a Gaussian blur (no frequency
+sidelobes) and can be computed at multiple scales for noise gating.
 """
 
 from __future__ import annotations
@@ -94,8 +98,8 @@ def _phase_edge_saliency(v: torch.Tensor, eps: float = 6.1035e-5) -> torch.Tenso
     v_x, v_y = _central_gradients(v)
 
     # Laplacian computed at same resolution by padding before differencing
-    dxx = F.pad(v_x, (0, 1))[..., 1:] - F.pad(v_x, (1, 0))[..., :-1]
-    dyy = F.pad(v_y, (0, 0, 0, 1))[..., 1:, :] - F.pad(v_y, (0, 0, 1, 0))[..., :-1, :]
+    dxx = F.pad(v_x, (0, 1), mode="reflect")[..., 1:] - F.pad(v_x, (1, 0), mode="reflect")[..., :-1]
+    dyy = F.pad(v_y, (0, 0, 0, 1), mode="reflect")[..., 1:, :] - F.pad(v_y, (0, 0, 1, 0), mode="reflect")[..., :-1, :]
     laplacian = dxx + dyy
 
     grad_mag = torch.sqrt(v_x ** 2 + v_y ** 2 + eps)
