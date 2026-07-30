@@ -1,19 +1,26 @@
 """
-infinity_diffusion.py — Unified Velocity / Quantile Correction Integrator (omega).
+infinity_diffusion.py — Aether velocity integrator (v1.2.0-aether).
 
-Builds on the proven nano foundation (HTDS, LPVD, NQVP) with two
-targeted enhancements:
+Extends the proven omega foundation (LPVD, AHFRI, DoG, AVN, NQVP)
+with coherence-anchored anisotropic enhancements:
+  - Coherence-weighted DoG: isotropic band-pass on the nano band,
+    modulated by the structure tensor coherence C.  Edges get full
+    enhancement; noise/flat regions are suppressed.
+  - Coherence-masked LISC: directional shading on the macro band
+    during the macro phase (sigma >= 0.8), masked by C so shading
+    only sticks to coherent structure.
+  - VNN (Velocity Norm Normalization): rescales the enhanced velocity
+    to match the original L2 norm, preserving the ODE trajectory.
+  - TZTD (Terminal Zero-Gain Decay): all enhancements fade linearly
+    to zero as sigma drops below 0.80, reaching strict zero at 0.15.
 
-  - Adaptive Velocity Normalization (AVN) — per-channel velocity spread
-    dampener that prevents CFG oversaturation across all model types.
-  - Difference-of-Gaussians (DoG) band enhancement on the LPVD nano
-    band — isotropic edge enhancement without directional bias.
+All gradient computations use reflection-padded central differences
+(both components at the same pixel positions — no phase cancellation).
+The structure tensor is smoothed with a Gaussian blur (no box filter
+frequency sidelobes).
 
-All components:
-  - InfinityScheduler : Hyperbolic Tail-Density Scheduling (HTDS)
-  - InfinitySampler   : LPVD / DoG / AHFRI / AVN
-  - _quantile_variance_preserve  : Non-Linear Quantile Variance Preservation (NQVP)
-  - _adaptive_velocity_normalize : Adaptive Velocity Normalization (AVN)
+Compatible with SD/SDXL (sigma_max ~14.6) and flow models
+(sigma_max = 1.0, all enhancements bypassed).
 """
 
 from __future__ import annotations
@@ -21,10 +28,11 @@ from __future__ import annotations
 import math
 import torch
 import torch.nn.functional as F
+from tqdm.auto import tqdm
 
 
 __all__ = ["InfinityScheduler", "InfinitySampler"]
-__version__ = "1.1.0-omega"
+__version__ = "1.2.0-aether"
 
 
 def _append_zero(x: torch.Tensor) -> torch.Tensor:
@@ -211,6 +219,77 @@ def _adaptive_velocity_normalize(
 
 
 # ---------------------------------------------------------------------------
+# Aether helpers — structure tensor, coherence-weighted LISC, VNN
+# ---------------------------------------------------------------------------
+
+
+def _central_gradients(v: torch.Tensor):
+    """Reflection-padded central differences — both gradient components
+    are evaluated at exactly the same pixel positions, avoiding the
+    half-pixel offset that creates phase cancellation artifacts."""
+    v_pad = F.pad(v, (1, 1, 1, 1), mode="reflect")
+    v_x = v_pad[..., 1:-1, 2:] - v_pad[..., 1:-1, :-2]
+    v_y = v_pad[..., 2:, 1:-1] - v_pad[..., :-2, 1:-1]
+    return v_x, v_y
+
+
+def _structure_tensor_coherence(v: torch.Tensor, eps: float = 1e-5
+                                 ) -> torch.Tensor:
+    """Local structure tensor coherence C in [0, 1].
+
+    C is 1 along strong edge normals and 0 in isotropic / noisy regions.
+    Gradients are computed via central differences and the tensor is
+    smoothed with a Gaussian blur (not box filter) to avoid frequency
+    sidelobes that could imprint block patterns."""
+    v_x, v_y = _central_gradients(v)
+
+    j_xx = _gaussian_blur2d(v_x ** 2, kernel_size=3, sigma=1.0)
+    j_yy = _gaussian_blur2d(v_y ** 2, kernel_size=3, sigma=1.0)
+    j_xy = _gaussian_blur2d(v_x * v_y, kernel_size=3, sigma=1.0)
+
+    trace = j_xx + j_yy + eps
+    diff = j_xx - j_yy
+    coherence = ((diff ** 2 + 4 * (j_xy ** 2)) /
+                 (trace ** 2 + eps)).clamp(0.0, 1.0)
+    return coherence
+
+
+def _coherence_lisc(v: torch.Tensor, light_angle_deg: float,
+                    strength: float) -> torch.Tensor:
+    """Directional shading masked by structure tensor coherence.
+
+    The gradient projection onto the light vector is multiplied by the
+    local coherence, so shading only appears along coherent structure
+    and does not imprint artifacts on noisy or flat regions."""
+    coherence = _structure_tensor_coherence(v)
+    rad = math.radians(light_angle_deg)
+    lx, ly = math.cos(rad), math.sin(rad)
+
+    v_x, v_y = _central_gradients(v)
+    shading = v_x * lx + v_y * ly
+    return v + strength * coherence * shading
+
+
+def _velocity_norm_normalize(v_enhanced: torch.Tensor,
+                             v_reference: torch.Tensor,
+                             eps: float = 1e-5) -> torch.Tensor:
+    """Velocity Norm Normalization (VNN).
+
+    Rescales ``v_enhanced`` per sample so its L2 norm matches
+    ``v_reference``.  This preserves the ODE trajectory energy
+    while allowing spatial redistribution (sharper edges,
+    directional lighting)."""
+    ndim = v_enhanced.ndim
+    norm_ref = torch.norm(
+        v_reference.flatten(1), p=2, dim=1, keepdim=True,
+    ).view(-1, *([1] * (ndim - 1)))
+    norm_enh = torch.norm(
+        v_enhanced.flatten(1), p=2, dim=1, keepdim=True,
+    ).view(-1, *([1] * (ndim - 1))) + eps
+    return v_enhanced * (norm_ref / norm_enh)
+
+
+# ---------------------------------------------------------------------------
 # Scheduler — Hyperbolic Tail-Density Scheduling (HTDS)
 # ---------------------------------------------------------------------------
 
@@ -326,8 +405,12 @@ class InfinitySampler:
         x: torch.Tensor,
         sigmas: torch.Tensor,
         callback=None,
+        *,
+        disable: bool = False,
+        light_angle_deg: float = 135.0,
+        lisc_strength: float = 0.06,
     ) -> torch.Tensor:
-        """Run the infinity (omega) sampling loop.
+        """Run the infinity (aether) sampling loop.
 
         Parameters
         ----------
@@ -340,6 +423,12 @@ class InfinitySampler:
             non-zero terminal sigmas from sliced schedules are clamped).
         callback : callable, optional
             ``callback({'x': x, 'i': i, 'sigma': sigma, 'sigma_hat': sigma_hat, 'denoised': denoised})``
+        disable : bool, optional
+            If True, suppress the terminal tqdm progress bar.
+        light_angle_deg : float, optional
+            Virtual light direction in degrees (default 135.0).
+        lisc_strength : float, optional
+            LISC shading intensity (default 0.10).
 
         Returns
         -------
@@ -364,91 +453,117 @@ class InfinitySampler:
         is_flow = sigma_max < 5.0
 
         i = 0
-        while i < total_steps:
-            s_cur = sigmas[i]
-            s_next = sigmas[i + 1]
+        with tqdm(total=total_steps, disable=disable) as pbar:
+            while i < total_steps:
+                pbar.update(1)
+                s_cur = sigmas[i]
+                s_next = sigmas[i + 1]
 
-            denoised = denoise_fn(x, s_cur.item())
+                denoised = denoise_fn(x, s_cur.item())
 
-            if callback is not None:
-                callback({"x": x, "i": i, "sigma": s_cur, "sigma_hat": s_cur, "denoised": denoised})
+                if callback is not None:
+                    callback({"x": x, "i": i, "sigma": s_cur, "sigma_hat": s_cur, "denoised": denoised})
 
-            # NQVP — quantile variance preservation.
-            # Only for standard diffusion models (SD/SDXL) where sigma*epsilon
-            # creates large early-step latent swings.  Flow models skip this.
-            if not is_flow:
-                denoised, ema_q95 = _quantile_variance_preserve(
-                    denoised, ema_q95, i, total_steps,
+                # NQVP — quantile variance preservation.
+                # Only for standard diffusion models (SD/SDXL) where sigma*epsilon
+                # creates large early-step latent swings.  Flow models skip this.
+                if not is_flow:
+                    denoised, ema_q95 = _quantile_variance_preserve(
+                        denoised, ema_q95, i, total_steps,
+                    )
+
+                s_cur_val = s_cur.item()
+                s_next_val = s_next.item()
+
+                if s_cur_val < 1e-7:
+                    x = denoised
+                    i += 1
+                    continue
+
+                # Velocity field
+                v_cur = (x - denoised) / s_cur_val
+                h = s_next_val - s_cur_val
+
+                ndim = v_cur.ndim
+                folded = False
+                v_process = v_cur
+
+                if ndim == 5:
+                    B, C, T, H, W = v_process.shape
+                    v_process = v_process.transpose(1, 2).reshape(B * T, C, H, W)
+                    folded = True
+
+                # AVN — velocity spread dampener for all model types.
+                # SD/SDXL: stronger clamp (0.85) — velocity is noisier at early steps
+                # Flow:     gentler clamp (0.70) — velocity trajectory is naturally cleaner
+                avn_strength = 0.85 if not is_flow else 0.70
+                v_process, ema_v_std = _adaptive_velocity_normalize(
+                    v_process, ema_v_std, i, total_steps, clamp_min=avn_strength,
                 )
 
-            s_cur_val = s_cur.item()
-            s_next_val = s_next.item()
+                # Terminal Zero-Gain Decay (TZTD): gamma = 1 at sigma >= 0.80,
+                # gamma = 0 at sigma <= 0.15.  All enhancement strengths are
+                # multiplied by gamma to prevent 1/sigma blowup at terminal steps.
+                gamma = max(0.0, min(1.0, (s_cur_val - 0.15) / 0.65))
 
-            if s_cur_val < 1e-7:
-                x = denoised
+                if total_steps <= 6 or gamma <= 1e-4:
+                    # Pure Euler: low-step models or terminal noise steps
+                    v_step = v_process
+                else:
+                    # 3-Band Laplacian Pyramid Decomposition
+                    eps = 6.1035e-5
+
+                    v_macro = _gaussian_blur2d(v_process, kernel_size=5, sigma=2.0)
+                    v_filtered_m = _gaussian_blur2d(v_process, kernel_size=3, sigma=1.0)
+                    v_meso = v_filtered_m - v_macro
+                    v_nano = v_process - v_filtered_m
+
+                    # Local spatial variance map for high-frequency resonance
+                    v_nano_sq_blur = _gaussian_blur2d(v_nano ** 2, kernel_size=3, sigma=1.0)
+                    v_nano_blur_sq = _gaussian_blur2d(v_nano, kernel_size=3, sigma=1.0) ** 2
+                    s_nano = torch.sqrt((v_nano_sq_blur - v_nano_blur_sq).clamp(min=eps))
+
+                    s_nano_mean = s_nano.mean(dim=(2, 3), keepdim=True)
+
+                    # Dynamic resonance scaling based on sigma phase
+                    eta = 0.25 * max(0.1, min(1.0, s_cur_val / 1.5))
+                    omega_nano = 1.0 + eta * torch.tanh(s_nano / (s_nano_mean + eps))
+
+                    # ── LISC: directional shading on the macro band ──
+                    # Applied during macro phase (sigma >= 0.80).  The shading
+                    # is masked by the structure tensor coherence so it only
+                    # affects coherent structure, not noisy or flat regions.
+                    is_macro_phase = s_cur_val >= 0.80
+                    if is_macro_phase and lisc_strength > 0:
+                        v_macro = _coherence_lisc(
+                            v_macro, light_angle_deg,
+                            strength=lisc_strength * gamma,
+                        )
+
+                    # Coherence-weighted DoG: standard isotropic band-pass
+                    # (blur(nano, 0.5) - blur(nano, 1.0)) modulated by the
+                    # structure tensor coherence C.  C is near 1 along edges
+                    # (full enhancement) and near 0 in noisy/flat regions
+                    # (suppressed), providing effective anisotropy.
+                    v_nano_blur_narrow = _gaussian_blur2d(v_nano, kernel_size=3, sigma=0.5)
+                    v_nano_blur_wide = _gaussian_blur2d(v_nano, kernel_size=5, sigma=1.0)
+                    dog = v_nano_blur_narrow - v_nano_blur_wide
+                    dog_strength = 0.10 * eta * gamma
+
+                    coherence = _structure_tensor_coherence(v_nano, eps=eps)
+                    v_nano = v_nano + dog_strength * coherence * dog
+
+                    v_step = v_macro + v_meso + (omega_nano * v_nano)
+
+                    # Velocity Norm Normalization: rescale v_step to match
+                    # v_process L2 norm, preventing ODE trajectory drift
+                    # from energy accumulation.
+                    v_step = _velocity_norm_normalize(v_step, v_process)
+
+                if folded:
+                    v_step = v_step.view(B, T, C, H, W).transpose(1, 2).contiguous()
+
+                x = x + h * v_step
                 i += 1
-                continue
-
-            # Velocity field
-            v_cur = (x - denoised) / s_cur_val
-            h = s_next_val - s_cur_val
-
-            ndim = v_cur.ndim
-            folded = False
-            v_process = v_cur
-
-            if ndim == 5:
-                B, C, T, H, W = v_process.shape
-                v_process = v_process.transpose(1, 2).reshape(B * T, C, H, W)
-                folded = True
-
-            # AVN — velocity spread dampener for all model types.
-            # SD/SDXL: stronger clamp (0.85) — velocity is noisier at early steps
-            # Flow:     gentler clamp (0.70) — velocity trajectory is naturally cleaner
-            avn_strength = 0.85 if not is_flow else 0.70
-            v_process, ema_v_std = _adaptive_velocity_normalize(
-                v_process, ema_v_std, i, total_steps, clamp_min=avn_strength,
-            )
-
-            if total_steps <= 6:
-                # Low-step linear trajectory — pure Euler
-                v_step = v_process
-            else:
-                # 3-Band Laplacian Pyramid Decomposition
-                eps = 6.1035e-5
-
-                v_macro = _gaussian_blur2d(v_process, kernel_size=5, sigma=2.0)
-                v_filtered_m = _gaussian_blur2d(v_process, kernel_size=3, sigma=1.0)
-                v_meso = v_filtered_m - v_macro
-                v_nano = v_process - v_filtered_m
-
-                # Local spatial variance map for high-frequency resonance
-                v_nano_sq_blur = _gaussian_blur2d(v_nano ** 2, kernel_size=3, sigma=1.0)
-                v_nano_blur_sq = _gaussian_blur2d(v_nano, kernel_size=3, sigma=1.0) ** 2
-                s_nano = torch.sqrt((v_nano_sq_blur - v_nano_blur_sq).clamp(min=eps))
-
-                s_nano_mean = s_nano.mean(dim=(2, 3), keepdim=True)
-
-                # Dynamic resonance scaling based on sigma phase
-                eta = 0.25 * max(0.1, min(1.0, s_cur_val / 1.5))
-                omega_nano = 1.0 + eta * torch.tanh(s_nano / (s_nano_mean + eps))
-
-                # DoG (Difference of Gaussians) band enhancement on nano band
-                # Isotropic band-pass filter: blur(nano, sigma=0.5) - blur(nano, sigma=1.0)
-                # Classic ratio sigma2/sigma1 = 2.0 for edge enhancement.
-                # The dog_strength scales with sigma phase (same eta as AHFRI).
-                v_nano_blur_narrow = _gaussian_blur2d(v_nano, kernel_size=3, sigma=0.5)
-                v_nano_blur_wide = _gaussian_blur2d(v_nano, kernel_size=5, sigma=1.0)
-                dog = v_nano_blur_narrow - v_nano_blur_wide
-                dog_strength = 0.15 * eta  # scales with sigma phase
-                v_nano = v_nano + dog_strength * dog
-
-                v_step = v_macro + v_meso + (omega_nano * v_nano)
-
-            if folded:
-                v_step = v_step.view(B, T, C, H, W).transpose(1, 2).contiguous()
-
-            x = x + h * v_step
-            i += 1
 
         return x

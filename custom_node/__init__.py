@@ -23,7 +23,7 @@ if "infinity" not in samplers.SCHEDULER_NAMES:
     samplers.SCHEDULER_NAMES.append("infinity")
 samplers.SCHEDULER_HANDLERS["infinity"] = SchedulerHandler(infinity_scheduler)
 
-print("# Registered infinity sampler and scheduler")
+print("# Registered infinity sampler and scheduler (aether v1.2.0)")
 
 # ComfyUI requires NODE_CLASS_MAPPINGS or comfy_entrypoint to not skip
 # the module.  We monkey-patch existing samplers rather than defining
