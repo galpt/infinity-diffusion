@@ -35,6 +35,113 @@ __all__ = ["InfinityScheduler", "InfinitySampler"]
 __version__ = "1.2.0-aether"
 
 
+# ---------------------------------------------------------------------------
+# Laws' texture energy masks (5×5), phase congruency, material classification
+# ---------------------------------------------------------------------------
+
+def _laws_texture_energy(v: torch.Tensor) -> dict:
+    """Laws' texture energy classification of each pixel.
+
+    Convolves the input with 5×5 Laws masks derived from 1D kernels:
+      L5 = (1, 4, 6, 4, 1)  — level / Gaussian
+      E5 = (−1, −2, 0, 2, 1) — edge
+      S5 = (−1, 0, 2, 0, −1) — spot
+      R5 = (1, −4, 6, −4, 1) — ripple
+      W5 = (−1, 2, −2, 2, −1) — wave
+
+    Returns a dict of response tensors: {name: (B, C, H, W)}.
+    The response magnitude indicates the dominant texture type.
+    """
+    B, C, H, W = v.shape
+    device, dtype = v.device, v.dtype
+
+    # 1D kernels
+    l5 = torch.tensor([1, 4, 6, 4, 1], device=device, dtype=dtype)
+    e5 = torch.tensor([-1, -2, 0, 2, 1], device=device, dtype=dtype)
+    s5 = torch.tensor([-1, 0, 2, 0, -1], device=device, dtype=dtype)
+    r5 = torch.tensor([1, -4, 6, -4, 1], device=device, dtype=dtype)
+    w5 = torch.tensor([-1, 2, -2, 2, -1], device=device, dtype=dtype)
+
+    # Selected 5×5 masks: outer product pairs
+    # Normalized so L5L5 has unit response to constant input
+    pairs = [
+        ("level", l5, l5), ("edge", e5, e5), ("spot", s5, s5),
+        ("ripple", r5, r5), ("wave", w5, w5),
+        ("level_edge", l5, e5), ("edge_level", e5, l5),
+        ("level_spot", l5, s5), ("spot_level", s5, l5),
+    ]
+
+    v_r = v.reshape(B * C, 1, H, W)  # (B*C, 1, H, W) for per-channel conv
+    responses = {}
+    for name, k1, k2 in pairs:
+        kernel = k1[:, None] * k2[None, :]  # (5, 5)
+        kernel = kernel / 36.0  # normalize by central value (6×6), keeps scale between masks
+        kernel = kernel.unsqueeze(0).unsqueeze(0)  # (1, 1, 5, 5)
+        # Average energy over local 5×5 window
+        resp = F.conv2d(v_r, kernel, padding=2).reshape(B, C, H, W)
+        responses[name] = resp.abs()
+
+    return responses
+
+
+def _phase_edge_saliency(v: torch.Tensor, eps: float = 6.1035e-5) -> torch.Tensor:
+    """Contrast-invariant edge saliency via local energy model.
+
+    Approximates phase congruency using the ratio of local energy to
+    smoothed local energy.  Detects edges at ALL contrast levels equally,
+    unlike gradient magnitude which misses weak edges."""
+    # Local energy: sqrt(gradient² + laplacian²)
+    v_x, v_y = _central_gradients(v)
+
+    # Laplacian computed at same resolution by padding before differencing
+    dxx = F.pad(v_x, (0, 1))[..., 1:] - F.pad(v_x, (1, 0))[..., :-1]
+    dyy = F.pad(v_y, (0, 0, 0, 1))[..., 1:, :] - F.pad(v_y, (0, 0, 1, 0))[..., :-1, :]
+    laplacian = dxx + dyy
+
+    grad_mag = torch.sqrt(v_x ** 2 + v_y ** 2 + eps)
+    local_energy = torch.sqrt(grad_mag ** 2 + laplacian ** 2 + eps)
+
+    # Phase congruency ≈ local_energy / (local_energy + smoothed_energy)
+    # Smoothed energy = Gaussian blur of local energy
+    smoothed = _gaussian_blur2d(local_energy, kernel_size=7, sigma=2.0)
+    saliency = local_energy / (local_energy + smoothed + eps)
+    return saliency.clamp(0.0, 1.0)
+
+
+def _classify_material(texture_responses: dict) -> torch.Tensor:
+    """Pixel-wise material classification from Laws' texture responses.
+
+    Returns a (B, C, H, W) integer tensor: 0=flat, 1=skin/texture,
+    2=line_art, 3=fabric/ripple.
+    """
+    # Compare which response is strongest at each pixel
+    names = list(texture_responses.keys())
+    stack = torch.stack([texture_responses[n] for n in names], dim=-1)  # (B, C, H, W, 9)
+    _, argmax = stack.max(dim=-1)  # (B, C, H, W)
+
+    # Map argmax of 9 classes → 4 material types
+    # level(0)=flat, spot(2)=skin, edge(1)=line_art, ripple(3)=fabric
+    # mixed responses get interpolated
+    material = torch.zeros_like(argmax, dtype=torch.uint8)
+    for idx, name in enumerate(names):
+        if name == "spot" or name == "level_spot" or name == "spot_level":
+            material[argmax == idx] = 1  # skin/texture
+        elif name == "edge" or name == "level_edge" or name == "edge_level":
+            material[argmax == idx] = 2  # line art
+        elif name == "ripple" or name == "wave":
+            material[argmax == idx] = 3  # fabric
+        else:
+            material[argmax == idx] = 0  # flat
+
+    return material
+
+
+
+# ---------------------------------------------------------------------------
+# Gaussian blur, quantile correction, AVN
+# ---------------------------------------------------------------------------
+
+
 def _append_zero(x: torch.Tensor) -> torch.Tensor:
     """Append a single zero element to a 1-D tensor."""
     return torch.cat([x, x.new_zeros([1])])
@@ -231,25 +338,32 @@ def _central_gradients(v: torch.Tensor):
     return v_x, v_y
 
 
-def _structure_tensor_coherence(v: torch.Tensor, eps: float = 1e-5
-                                 ) -> torch.Tensor:
+def _structure_tensor_coherence(v: torch.Tensor, eps: float = 1e-5,
+                                 multi_scale: bool = False) -> torch.Tensor:
     """Local structure tensor coherence C in [0, 1].
 
     C is 1 along strong edge normals and 0 in isotropic / noisy regions.
-    Gradients are computed via central differences and the tensor is
-    smoothed with a Gaussian blur (not box filter) to avoid frequency
-    sidelobes that could imprint block patterns."""
+    When ``multi_scale=True``, computes coherence at three Gaussian blur
+    scales (3/5/7, sigma=0.5/1.0/2.0) and takes the per-pixel maximum,
+    capturing edge structures from fine hair to broad limbs."""
     v_x, v_y = _central_gradients(v)
 
-    j_xx = _gaussian_blur2d(v_x ** 2, kernel_size=3, sigma=1.0)
-    j_yy = _gaussian_blur2d(v_y ** 2, kernel_size=3, sigma=1.0)
-    j_xy = _gaussian_blur2d(v_x * v_y, kernel_size=3, sigma=1.0)
+    def _coherence_at_scale(ks, sg):
+        j_xx = _gaussian_blur2d(v_x ** 2, kernel_size=ks, sigma=sg)
+        j_yy = _gaussian_blur2d(v_y ** 2, kernel_size=ks, sigma=sg)
+        j_xy = _gaussian_blur2d(v_x * v_y, kernel_size=ks, sigma=sg)
+        tr = j_xx + j_yy + eps
+        df = j_xx - j_yy
+        return ((df ** 2 + 4 * (j_xy ** 2)) / (tr ** 2 + eps)).clamp(0.0, 1.0)
 
-    trace = j_xx + j_yy + eps
-    diff = j_xx - j_yy
-    coherence = ((diff ** 2 + 4 * (j_xy ** 2)) /
-                 (trace ** 2 + eps)).clamp(0.0, 1.0)
-    return coherence
+    if multi_scale:
+        scales = [(3, 0.5), (5, 1.0), (7, 2.0)]
+        c = _coherence_at_scale(*scales[0])
+        for ks, sg in scales[1:]:
+            c = torch.maximum(c, _coherence_at_scale(ks, sg))
+        return c
+    else:
+        return _coherence_at_scale(3, 1.0)
 
 
 def _coherence_lisc(v: torch.Tensor, light_angle_deg: float,
@@ -259,11 +373,16 @@ def _coherence_lisc(v: torch.Tensor, light_angle_deg: float,
     The gradient projection onto the light vector is multiplied by the
     local coherence, so shading only appears along coherent structure
     and does not imprint artifacts on noisy or flat regions."""
-    coherence = _structure_tensor_coherence(v, eps=eps)
+    v_x, v_y = _central_gradients(v)
+    j_xx = _gaussian_blur2d(v_x ** 2, kernel_size=3, sigma=1.0)
+    j_yy = _gaussian_blur2d(v_y ** 2, kernel_size=3, sigma=1.0)
+    j_xy = _gaussian_blur2d(v_x * v_y, kernel_size=3, sigma=1.0)
+    trace = j_xx + j_yy + eps
+    diff = j_xx - j_yy
+    coherence = ((diff ** 2 + 4 * (j_xy ** 2)) / (trace ** 2 + eps)).clamp(0.0, 1.0)
+
     rad = math.radians(light_angle_deg)
     lx, ly = math.cos(rad), math.sin(rad)
-
-    v_x, v_y = _central_gradients(v)
     shading = v_x * lx + v_y * ly
     return v + strength * coherence * shading
 
@@ -476,6 +595,22 @@ class InfinitySampler:
                     i += 1
                     continue
 
+                # Multi-scale edge coherence from the denoised prediction
+                # for noise gating (adds texture to flat regions).
+                noise_coherence = None
+                if total_steps > 6:
+                    dc = denoised
+                    if dc.ndim == 5:
+                        B, C, T, H, W = dc.shape
+                        dc = dc.transpose(1, 2).reshape(B * T, C, H, W)
+                    noise_coherence = _structure_tensor_coherence(
+                        dc, eps=6.1035e-5, multi_scale=True,
+                    )
+                    # Material-aware enhancement data from the denoised prediction
+                    texture_resp = _laws_texture_energy(dc)
+                    material = _classify_material(texture_resp)
+                    phase_sal = _phase_edge_saliency(dc)
+
                 # Velocity field
                 v_cur = (x - denoised) / s_cur_val
                 h = s_next_val - s_cur_val
@@ -536,18 +671,31 @@ class InfinitySampler:
                             strength=lisc_strength * gamma,
                         )
 
-                    # Coherence-weighted DoG: standard isotropic band-pass
-                    # (blur(nano, 0.5) - blur(nano, 1.0)) modulated by the
-                    # structure tensor coherence C.  C is near 1 along edges
-                    # (full enhancement) and near 0 in noisy/flat regions
-                    # (suppressed), providing effective anisotropy.
+                    # ── Material-aware coherence-weighted DoG ──
+                    # Different materials get different enhancement strategies:
+                    #   Flat (class 0):     gentle coherence-weighted only
+                    #   Skin/texture (1):   coherence + isotropic-variance blend
+                    #   Line art (2):       max(coherence, phase saliency)
+                    #   Fabric/ripple (3):  coherence + strong variance blend
                     v_nano_blur_narrow = _gaussian_blur2d(v_nano, kernel_size=3, sigma=0.5)
                     v_nano_blur_wide = _gaussian_blur2d(v_nano, kernel_size=5, sigma=1.0)
                     dog = v_nano_blur_narrow - v_nano_blur_wide
-                    dog_strength = 0.10 * eta * gamma
 
                     coherence = _structure_tensor_coherence(v_nano, eps=eps)
-                    v_nano = v_nano + dog_strength * coherence * dog
+                    iso_gain = s_nano / (s_nano + eps)
+
+                    # Material-specific gain
+                    g_flat = coherence * 0.5
+                    g_skin = coherence + (1.0 - coherence) * iso_gain * 0.35
+                    g_line = torch.maximum(coherence, phase_sal)
+                    g_fabric = coherence + (1.0 - coherence) * iso_gain * 0.5
+
+                    gain = torch.where(material == 0, g_flat,
+                           torch.where(material == 1, g_skin,
+                           torch.where(material == 2, g_line, g_fabric)))
+
+                    dog_strength = 0.15 * eta * gamma
+                    v_nano = v_nano + dog_strength * gain * dog
 
                     v_step = v_macro + v_meso + (omega_nano * v_nano)
 
@@ -560,6 +708,21 @@ class InfinitySampler:
                     v_step = v_step.view(B, T, C, H, W).transpose(1, 2).contiguous()
 
                 x = x + h * v_step
+
+                # ── Coherence-gated noise injection ──
+                # Adds controlled stochasticity to flat regions (walls, floors,
+                # backgrounds) where the model tends to produce smooth outputs.
+                # The noise is gated by (1 - coherence): more noise in low-coherence
+                # (flat) regions, less at edges where it would degrade crispness.
+                # Noise strength decays with sigma: strongest near terminal steps
+                # where detail is synthesized, zero at sigma < 0.05.
+                if noise_coherence is not None and s_cur_val > 0.02:
+                    ndim_x = x.ndim
+                    if ndim_x == 4:
+                        noise_str = 0.03 * max(0.0, min(1.0, (s_cur_val - 0.02) / 0.08))
+                        noise_mask = 1.0 - noise_coherence
+                        x = x + noise_str * noise_mask * torch.randn_like(x)
+
                 i += 1
 
         return x
