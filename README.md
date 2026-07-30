@@ -4,7 +4,7 @@ The `aether` branch produces sharper, more detailed images than standard sampler
 
 ## When to Use It
 
-- **Anime and illustration.** Line art comes out crisp and clean (eyes, hair strands, clothing borders) while flat color areas stay smooth. No jagged edges or pixelation when zoomed in.
+- **Anime and illustration.** Line art comes out crisp and clean (eyes, hair strands, clothing borders) while flat color areas stay smooth.
 - **Portraits and skin close-ups.** Skin retains natural texture — pores, sweat droplets, fine wrinkles — instead of looking plastic or airbrushed. Shadows and highlights follow the face contours naturally.
 - **Fabric and patterned textures.** Clothing patterns, fabric weave, and surface details render clearly without blurring into the surrounding area.
 - **Scenes with strong lighting (sunlight, stage light, rim light).** Lighting direction stays consistent across the image — cast shadows, highlights, and ambient light feel physically coherent rather than painted on after the fact.
