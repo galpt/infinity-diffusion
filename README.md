@@ -10,13 +10,11 @@ The `aether` branch produces sharper, more detailed images than standard sampler
 - **Scenes with strong lighting (sunlight, stage light, rim light).** Lighting direction stays consistent across the image — cast shadows, highlights, and ambient light feel physically coherent rather than painted on after the fact.
 - **Backgrounds and environments.** Walls, floors, and solid-color areas get subtle micro-texture instead of looking flat while edges between objects remain sharp.
 
-### Quick start
+### Quick Start
 
-Set Steps to `25` and CFG to `7.0` with the `infinity` sampler and scheduler. Works with SD 1.5, SDXL, and flow models.
-
-For distilled models like Krea 2 Turbo (4&ndash;8 steps), all enhancements are automatically bypassed — no configuration needed.
-
-## Quick Installation
+> [!TIP]
+> 1. Set Steps to `25` and CFG to `7.0` with the `infinity` sampler and scheduler. Works with SD 1.5, SDXL, and flow models.
+> 2. For distilled models like Krea 2 Turbo (4&ndash;8 steps), all enhancements are automatically bypassed — no configuration needed.
 
 ```bash
 git clone -b aether --depth 1 https://github.com/galpt/infinity-diffusion.git
