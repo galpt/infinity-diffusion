@@ -253,13 +253,13 @@ def _structure_tensor_coherence(v: torch.Tensor, eps: float = 1e-5
 
 
 def _coherence_lisc(v: torch.Tensor, light_angle_deg: float,
-                    strength: float) -> torch.Tensor:
+                    strength: float, eps: float = 6.1035e-5) -> torch.Tensor:
     """Directional shading masked by structure tensor coherence.
 
     The gradient projection onto the light vector is multiplied by the
     local coherence, so shading only appears along coherent structure
     and does not imprint artifacts on noisy or flat regions."""
-    coherence = _structure_tensor_coherence(v)
+    coherence = _structure_tensor_coherence(v, eps=eps)
     rad = math.radians(light_angle_deg)
     lx, ly = math.cos(rad), math.sin(rad)
 
@@ -270,7 +270,7 @@ def _coherence_lisc(v: torch.Tensor, light_angle_deg: float,
 
 def _velocity_norm_normalize(v_enhanced: torch.Tensor,
                              v_reference: torch.Tensor,
-                             eps: float = 1e-5) -> torch.Tensor:
+                             eps: float = 6.1035e-5) -> torch.Tensor:
     """Velocity Norm Normalization (VNN).
 
     Rescales ``v_enhanced`` per sample so its L2 norm matches

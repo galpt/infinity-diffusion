@@ -4,7 +4,7 @@ The `aether` branch builds on the proven `omega` foundation (LPVD + AHFRI + DoG 
 
 1. **Coherence-weighted DoG** — standard isotropic DoG band-pass on the nano band, modulated by the structure tensor coherence `C`. Edges get full enhancement; noise and flat regions are suppressed, providing effective anisotropy without wavelet artifacts.
 2. **Coherence-masked LISC** — directional gradient projection onto a virtual light vector (`L = (cosθ, sinθ)`), masked by the structure tensor coherence. Shading only affects coherent structure, preventing false illumination on noise.
-3. **VNN + TZTD safety wrappers** — Velocity Norm Normalization preserves the ODE trajectory energy after spatial modifications; Terminal Zero-Gain Decay (gamma) linearly fades all enhancements to zero as sigma drops below 0.15.
+3. **VNN + TZTD safety wrappers** — Velocity Norm Normalization preserves the ODE trajectory energy after spatial modifications; Terminal Zero-Gain Decay (gamma) linearly fades all enhancements to zero, reaching strict zero at σ = 0.15.
 
 ## When to Use It
 
