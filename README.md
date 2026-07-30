@@ -1,10 +1,6 @@
 # Infinity Diffusion (`aether` branch)
 
-The `aether` branch builds on the proven `omega` foundation (LPVD + AHFRI + DoG + AVN + NQVP) with three targeted enhancements that add directional edge awareness and lighting control without extra sampling passes:
-
-1. **Coherence-weighted DoG** — standard isotropic DoG band-pass on the nano band, modulated by the structure tensor coherence `C`. Edges get full enhancement; noise and flat regions are suppressed, providing effective anisotropy without wavelet artifacts.
-2. **Coherence-masked LISC** — directional gradient projection onto a virtual light vector (`L = (cosθ, sinθ)`), masked by the structure tensor coherence. Shading only affects coherent structure, preventing false illumination on noise.
-3. **VNN + TZTD safety wrappers** — Velocity Norm Normalization preserves the ODE trajectory energy after spatial modifications; Terminal Zero-Gain Decay (gamma) linearly fades all enhancements to zero, reaching strict zero at σ = 0.15.
+The `aether` branch builds on the proven `omega` branch with coherence-anchored anisotropic enhancements for sharper edges, directional lighting, and micro-surface texture preservation.
 
 ## When to Use It
 
@@ -38,7 +34,7 @@ Restart ComfyUI and select `infinity` in both the sampler and scheduler dropdown
 
 - **Hyperbolic Tail-Density Scheduling (HTDS).** Allocates up to 45% higher step density to low-noise regimes ($\sigma \le 0.8$), allowing more sampling steps during fine texture synthesis. At $N \le 4$ the schedule reverts to pure linear for distilled model safety.
 - **Adaptive Velocity Normalization (AVN).** Tracks a running EMA of per-channel velocity standard deviation. When CFG guidance pushes the velocity spread outside the EMA envelope, AVN dampens it — preventing oversaturation without distorting trajectory direction.
-- **Laplacian-Pyramid Velocity Decomposition (LPVD).** Decomposes the latent velocity field into a 3-band Gaussian/Laplacian spatial pyramid ($\mathbf{v}_{\text{macro}}$, $\mathbf{v}_{\text{meso}}$, $\mathbf{v}_{\text{nano}}$).
+- **Laplacian-Pyramid Velocity Decomposition (LPVD).** Decomposes the latent velocity field into a 3-band Gaussian/Laplacian spatial pyramid (<b>v</b><sub>macro</sub>, <b>v</b><sub>meso</sub>, <b>v</b><sub>nano</sub>).
 - **Adaptive High-Frequency Resonance Integration (AHFRI).** Dynamically scales integration gain on the nano band based on local spatial variance maps.
 - **Non-Linear Quantile Variance Preservation (NQVP).** Constrains 95th-percentile dynamic range expansion to $[0.88, 1.12]$ for standard diffusion models.
 
@@ -46,11 +42,11 @@ Restart ComfyUI and select `infinity` in both the sampler and scheduler dropdown
 
 - **Coherence-weighted Difference-of-Gaussians (DoG).** The standard isotropic band-pass (blur(nano, &sigma;=0.5) &minus; blur(nano, &sigma;=1.0)) is modulated by the structure tensor coherence $C \in [0, 1]$. $C$ is near 1 along coherent edge normals (full enhancement) and near 0 in isotropic or noisy regions (suppressed). This provides effective anisotropy without wavelet or sub-band decomposition that could imprint fixed spatial patterns.
 
-- **Latent Intrinsic Shading Control (LISC).** During the macro phase ($\sigma \ge 0.8$), spatial gradients of $\mathbf{v}_{\text{macro}}$ are projected onto a virtual 2D light vector $\mathbf{L} = (\cos\theta, \sin\theta)$. The projection is masked by the structure tensor coherence $C$ computed from $\mathbf{v}_{\text{macro}}$, ensuring shading only appears along coherent structure and does not imprint artifacts on noisy or flat regions.
+- **Latent Intrinsic Shading Control (LISC).** During the macro phase ($\sigma \ge 0.8$), spatial gradients of <b>v</b><sub>macro</sub> are projected onto a virtual 2D light vector <b>L</b> = (cos&theta;, sin&theta;). The projection is masked by the structure tensor coherence $C$ computed from <b>v</b><sub>macro</sub>, ensuring shading only appears along coherent structure and does not imprint artifacts on noisy or flat regions.
 
-- **Velocity Norm Normalization (VNN).** After all spatial modifications, the enhanced velocity $\mathbf{v}_{\text{step}}$ is rescaled per sample so its L2 norm matches the original UNet prediction $\mathbf{v}_{\text{orig}}$. This allows spatial energy redistribution (sharper edges, directional lighting) while preserving the ODE trajectory magnitude, preventing the exponential gain compounding that causes artifacts.
+- **Velocity Norm Normalization (VNN).** After all spatial modifications, the enhanced velocity <b>v</b><sub>step</sub> is rescaled per sample so its L2 norm matches the original UNet prediction <b>v</b><sub>orig</sub>. This allows spatial energy redistribution (sharper edges, directional lighting) while preserving the ODE trajectory magnitude, preventing the exponential gain compounding that causes artifacts.
 
-- **Terminal Zero-Gain Decay (TZTD).** All enhancement strengths are multiplied by $\gamma(\sigma) = \text{clamp}((\sigma - 0.15) / 0.65, 0.0, 1.0)$. At $\sigma \ge 0.80$, enhancements are at full strength. At $\sigma \le 0.15$, the sampler reverts to pure Euler, preventing $1/\sigma$ blowup of spatial modifications at terminal steps.
+- **Terminal Zero-Gain Decay (TZTD).** All enhancement strengths are multiplied by &gamma;(&sigma;) = clamp((&sigma; &minus; 0.15) / 0.65, 0.0, 1.0). At &sigma; &ge; 0.80, enhancements are at full strength. At &sigma; &le; 0.15, the sampler reverts to pure Euler, preventing 1/&sigma; blowup of spatial modifications at terminal steps.
 
 ### Gradient stability
 
@@ -62,9 +58,9 @@ Model quality is evaluated using the **Fidelity-Adjusted Texture & Line Score (F
 
 For the aether branch, two additional criteria are measured:
 
-1. **Anisotropic Edge Coherence ($S_{\text{edge}}$).** The alignment between enhanced edge direction and the structure tensor eigenvector. Measures whether the coherence-weighted DoG correctly amplifies the gradient along the edge normal without introducing directional bias.
+1. **Anisotropic Edge Coherence (<i>S</i><sub>edge</sub>).** The alignment between enhanced edge direction and the structure tensor eigenvector. Measures whether the coherence-weighted DoG correctly amplifies the gradient along the edge normal without introducing directional bias.
 
-2. **Directional Shadow Consistency ($S_{\text{shadow}}$).** The alignment of luminance gradients relative to the input light angle $\theta$. Validates that LISC shading is applied coherently across the image rather than creating conflicting shadow directions.
+2. **Directional Shadow Consistency (<i>S</i><sub>shadow</sub>).** The alignment of luminance gradients relative to the input light angle &theta;. Validates that LISC shading is applied coherently across the image rather than creating conflicting shadow directions.
 
 ## License
 
