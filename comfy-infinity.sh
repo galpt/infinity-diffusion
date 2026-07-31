@@ -60,10 +60,10 @@ is_patched() {
 
 # ── Install ──────────────────────────────────────────────────────────────────
 if [[ "$MODE" == "install" ]]; then
+    # Update in place: installing over an existing node refreshes the files
+    # (and clears stale bytecode) instead of requiring uninstall first.
     if [[ -d "$NODE_DIR" ]]; then
-        echo "infinity-diffusion is already installed at $NODE_DIR"
-        echo "Run '$0 $COMFYUI_DIR uninstall' first to reinstall"
-        exit 0
+        echo "infinity-diffusion is already installed at $NODE_DIR — updating files"
     fi
 
     mkdir -p "$NODE_DIR/infinity_comfyui"
@@ -75,6 +75,9 @@ if [[ "$MODE" == "install" ]]; then
 
     # Copy registration entry point
     cp "$SCRIPT_DIR/custom_node/__init__.py" "$NODE_DIR/__init__.py"
+
+    # Stale .pyc files would keep the previous version loaded on restart.
+    rm -rf "$NODE_DIR/__pycache__" "$NODE_DIR/infinity_comfyui/__pycache__"
 
     echo "Installed infinity-diffusion to $NODE_DIR"
     echo "Restart ComfyUI and select \"infinity\" from sampler and scheduler dropdowns."
