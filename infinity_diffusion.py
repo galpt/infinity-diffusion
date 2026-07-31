@@ -336,10 +336,15 @@ def _adaptive_velocity_normalize(
 
 
 def _central_gradients(v: torch.Tensor):
-    """Reflection-padded central differences — both gradient components
-    are evaluated at exactly the same pixel positions, avoiding the
-    half-pixel offset that creates phase cancellation artifacts."""
-    v_pad = F.pad(v, (1, 1, 1, 1), mode="reflect")
+    """Central differences with edge-replicated padding.
+
+    Uses torch.cat for padding instead of ``F.pad(mode="reflect")``,
+    which crashes on some backends (e.g. Intel XPU SYCL kernels throw
+    index-out-of-bounds for 4D reflect padding).  Replicating the edge
+    pixel differs from reflect only on the outermost row/column, which
+    is negligible for the structure tensor computation."""
+    v_pad = torch.cat([v[..., :1], v, v[..., -1:]], dim=-1)
+    v_pad = torch.cat([v_pad[..., :1, :], v_pad, v_pad[..., -1:, :]], dim=-2)
     v_x = v_pad[..., 1:-1, 2:] - v_pad[..., 1:-1, :-2]
     v_y = v_pad[..., 2:, 1:-1] - v_pad[..., :-2, 1:-1]
     return v_x, v_y
