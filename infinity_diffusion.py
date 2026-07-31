@@ -12,6 +12,12 @@ with material-aware anisotropic enhancements:
   - Coherence-weighted DoG: isotropic band-pass on the nano band,
     modulated by both structure tensor coherence and material class.
     Edges get full enhancement; noise/flat regions are suppressed.
+    Skin/fabric blend in an iso-band factor (coef 0.50/0.65) to
+    amplify model-drawn micro-texture without adding energy; the
+    band-pass and coherence weighting keep flat regions suppressed.
+    Skin additionally blends phase saliency (coef 0.30) so model-drawn
+    creases and feature lines are amplified contrast-invariantly
+    without adding energy.
   - Coherence-masked LISC: directional shading on the macro band
     during the macro phase (sigma >= 0.8), masked by C so shading
     only sticks to coherent structure.
@@ -19,10 +25,20 @@ with material-aware anisotropic enhancements:
     to match the AVN-corrected L2 norm, preserving the trajectory.
   - TZTD (Terminal Zero-Gain Decay): all enhancements fade linearly
     to zero as sigma drops below 0.80, reaching strict zero at 0.15.
-  - Coherence-gated noise injection: controlled stochasticity in
-    flat regions, gated by inverse coherence to preserve edges.
+  - Coherence-gated noise injection: uniform sigma-relative stochastic
+    grain n = min(0.25*sigma, 0.08) * ramp(sigma) * (1 - coherence),
+    ramp = clamp((s-0.02)/0.08) full at sigma >= 0.10, floored by
+    max(0.30*sigma_next, 0.03) so mid-schedule injection stays
+    absorbable by the next denoiser evaluation and the terminal stamp
+    reproduces old-aether's proven-clean 0.03 (the floor intentionally
+    permits that one non-absorbable stamp -- the pre-terminal denoiser
+    is not required to remove it, and old aether shipped it clean);
+    uniform scalar strength -- per-class strength maps create
+    grain mosaics; 4D only -- video is skipped to avoid temporal
+    flicker.
 
-All gradient computations use reflection-padded central differences.
+All gradient computations use central differences with edge-replicated
+padding (torch.cat; reflect padding crashes on some backends).
 The structure tensor is smoothed with a Gaussian blur (no frequency
 sidelobes) and can be computed at multiple scales for noise gating.
 """
@@ -40,10 +56,30 @@ __version__ = "1.2.0-aether"
 
 
 # ---------------------------------------------------------------------------
+# Uniform sigma-relative noise strength (images only): injected std is
+# n(s) = min(NOISE_SIGMA_COEF * s, NOISE_ABS_CAP) * ramp(s) * (1 - coherence),
+# ramp = clamp((s - 0.02) / 0.08).  Single scalar per step -- per-pixel
+# material-class strength maps create grain-strength mosaics (black plaques)
+# in smooth color regions.  The 0.30*sigma_next cap is floored at
+# NOISE_TERMINAL_FLOOR so the terminal stamp stays exactly the 0.03 old
+# aether proved clean; the cap still protects sliced schedules (hires /
+# detailer passes, denoise < 1) where sigma_next is meaningful.
+# NOISE_SIGMA_COEF = 0.25 anchors the low-sigma regime inside Song's
+# corrector band (~0.15-0.54 sigma, derived: injected std = 2r*||z||/||g||);
+# NOISE_ABS_CAP = 0.08 keeps mid-schedule injection at 2.7x old aether's
+# user-verified-clean 0.03 (intended magnitude increase, A/B-gated; v2's
+# failing magnitudes were 0.125-0.40 with class maps).
+# ---------------------------------------------------------------------------
+NOISE_SIGMA_COEF = 0.25
+NOISE_ABS_CAP = 0.08
+NOISE_TERMINAL_FLOOR = 0.03
+
+
+# ---------------------------------------------------------------------------
 # Laws' texture energy masks (5×5), phase congruency, material classification
 # ---------------------------------------------------------------------------
 
-def _laws_texture_energy(v: torch.Tensor) -> dict:
+def _laws_texture_energy(v: torch.Tensor, normalize: bool = False) -> dict:
     """Laws' texture energy classification of each pixel.
 
     Convolves the input with 5×5 Laws masks derived from 1D kernels:
@@ -55,6 +91,11 @@ def _laws_texture_energy(v: torch.Tensor) -> dict:
 
     Returns a dict of response tensors: {name: (B, C, H, W)}.
     The response magnitude indicates the dominant texture type.
+
+    normalize=True divides each response by its own mean before returning
+    -- needed for pixel-space (decoded [0,1]) images, where the level
+    response is dominated by the DC component; the sampler's latent-space
+    call site keeps the default False and is unchanged.
     """
     B, C, H, W = v.shape
     device, dtype = v.device, v.dtype
@@ -83,7 +124,15 @@ def _laws_texture_energy(v: torch.Tensor) -> dict:
         kernel = kernel.unsqueeze(0).unsqueeze(0)  # (1, 1, 5, 5)
         # Average energy over local 5×5 window
         resp = F.conv2d(v_r, kernel, padding=2).reshape(B, C, H, W)
-        responses[name] = resp.abs()
+        resp = resp.abs()
+        if normalize:
+            # Per-response mean normalization mirrors the image-space analysis
+            # scripts (|conv| / (mean(|conv|) + 1e-6)): on decoded [0,1] images
+            # the level response is DC-dominated and would otherwise win every
+            # argmax; the sampler classifies near-zero-mean latents and keeps
+            # the raw responses.
+            resp = resp / (resp.mean() + 1e-6)
+        responses[name] = resp
 
     return responses
 
@@ -686,9 +735,19 @@ class InfinitySampler:
                     # ── Material-aware coherence-weighted DoG ──
                     # Different materials get different enhancement strategies:
                     #   Flat (class 0):     gentle coherence-weighted only
-                    #   Skin/texture (1):   coherence + isotropic-variance blend
+                    #   Skin/texture (1):   coherence + iso-band blend
+                    #                       (coef 0.50 -- character micro-detail lever)
+                    #                       plus phase saliency (coef 0.30):
+                    #                       phase congruency adds a contrast-
+                    #                       invariant boost that rises above its
+                    #                       ~0.5 flat-region baseline only near
+                    #                       model-drawn creases/feature lines
+                    #                       (Kovesi 1995); the DoG band-pass
+                    #                       keeps the flat-region contribution
+                    #                       inert
                     #   Line art (2):       max(coherence, phase saliency)
-                    #   Fabric/ripple (3):  coherence + strong variance blend
+                    #   Fabric/ripple (3):  coherence + iso-band blend
+                    #                       (coef 0.65 -- fabric micro-detail lever)
                     v_nano_blur_narrow = _gaussian_blur2d(v_nano, kernel_size=3, sigma=0.5)
                     v_nano_blur_wide = _gaussian_blur2d(v_nano, kernel_size=5, sigma=1.0)
                     dog = v_nano_blur_narrow - v_nano_blur_wide
@@ -698,9 +757,9 @@ class InfinitySampler:
 
                     # Material-specific gain
                     g_flat = coherence * 0.5
-                    g_skin = coherence + (1.0 - coherence) * iso_gain * 0.35
+                    g_skin = coherence + (1.0 - coherence) * (iso_gain * 0.50 + phase_sal * 0.30)
                     g_line = torch.maximum(coherence, phase_sal)
-                    g_fabric = coherence + (1.0 - coherence) * iso_gain * 0.5
+                    g_fabric = coherence + (1.0 - coherence) * iso_gain * 0.65
 
                     gain = torch.where(material == 0, g_flat,
                            torch.where(material == 1, g_skin,
@@ -721,17 +780,35 @@ class InfinitySampler:
 
                 x = x + h * v_step
 
-                # ── Coherence-gated noise injection ──
+                # ── Coherence-gated noise injection (uniform, sigma-relative) ──
                 # Adds controlled stochasticity to flat regions (walls, floors,
                 # backgrounds) where the model tends to produce smooth outputs.
-                # The noise is gated by (1 - coherence): more noise in low-coherence
-                # (flat) regions, less at edges where it would degrade crispness.
-                # Noise strength decays with sigma: strongest near terminal steps
-                # where detail is synthesized, zero at sigma < 0.05.
+                # The noise is gated by (1 - coherence): more noise in
+                # low-coherence (flat) regions, less at edges where it would
+                # degrade crispness.  Strength is a uniform scalar per step --
+                # per-pixel material-class strength maps were found to create
+                # grain-strength mosaics (black plaque artifacts) in smooth
+                # color regions.  The 0.30*sigma_next cap keeps every injection
+                # absorbable by the next denoiser evaluation and is floored at
+                # NOISE_TERMINAL_FLOOR so the terminal stamp stays exactly the
+                # 0.03 old aether proved clean (the cap alone would trim it to
+                # 0.0088 at the last pre-terminal step).  5D video latents are
+                # skipped on purpose: per-frame noise would flicker across
+                # frames (see module docstring).
                 if noise_coherence is not None and s_cur_val > 0.02:
                     ndim_x = x.ndim
                     if ndim_x == 4:
-                        noise_str = 0.03 * max(0.0, min(1.0, (s_cur_val - 0.02) / 0.08))
+                        n_s = min(NOISE_SIGMA_COEF * s_cur_val, NOISE_ABS_CAP)
+                        n_s = n_s * max(0.0, min(1.0, (s_cur_val - 0.02) / 0.08))
+                        # 0.30*sigma_next keeps the injection absorbable by the
+                        # next denoiser evaluation; the terminal floor restores
+                        # old aether's proven-clean 0.03 stamp at the last
+                        # pre-terminal step (the sigma_next cap alone would trim
+                        # it to 0.0088).  At the final step sigma_next = 0 and
+                        # the floor yields max(0, 0.03) = 0.03, but n(s) there
+                        # is min(0.25*0.0292, 0.08)*ramp(0.115) = 0.00084, so
+                        # the floor never binds the final step.
+                        noise_str = min(n_s, max(0.30 * s_next_val, NOISE_TERMINAL_FLOOR))
                         noise_mask = 1.0 - noise_coherence
                         x = x + noise_str * noise_mask * torch.randn_like(x)
 
