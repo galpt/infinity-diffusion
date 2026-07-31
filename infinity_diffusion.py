@@ -38,7 +38,8 @@ with material-aware anisotropic enhancements:
     flicker.
 
 All gradient computations use central differences with edge-replicated
-padding (torch.cat; reflect padding crashes on some backends).
+padding (F.pad mode="replicate"; F.pad mode="reflect" and mask-based
+scatter crash on some backends).
 The structure tensor is smoothed with a Gaussian blur (no frequency
 sidelobes) and can be computed at multiple scales for noise gating.
 """
@@ -148,10 +149,13 @@ def _phase_edge_saliency(v: torch.Tensor, eps: float = 6.1035e-5) -> torch.Tenso
 
     # Laplacian computed at same resolution by padding before differencing.
     # Constant (zero) padding is used here because reflect padding on 4D
-    # tensors requires a full 6-element spec that varies across PyTorch versions.
-    # The one-pixel boundary effect is negligible for the saliency ratio output.
-    dxx = F.pad(v_x, (0, 1))[..., 1:] - F.pad(v_x, (1, 0))[..., :-1]
-    dyy = F.pad(v_y, (0, 0, 0, 1))[..., 1:, :] - F.pad(v_y, (0, 0, 1, 0))[..., :-1, :]
+    # tensors requires a full 6-element spec that varies across PyTorch
+    # versions.  The one-pixel boundary effect is negligible for the
+    # saliency ratio output.  Offsets use narrow() with explicit positive
+    # indices -- negative-end slicing dispatches into the XPU Indexing
+    # kernel, which has out-of-bounds failures on some backends.
+    dxx = F.pad(v_x, (0, 1)).narrow(-1, 1, v_x.shape[-1]) - F.pad(v_x, (1, 0)).narrow(-1, 0, v_x.shape[-1])
+    dyy = F.pad(v_y, (0, 0, 0, 1)).narrow(-2, 1, v_y.shape[-2]) - F.pad(v_y, (0, 0, 1, 0)).narrow(-2, 0, v_y.shape[-2])
     laplacian = dxx + dyy
 
     grad_mag = torch.sqrt(v_x ** 2 + v_y ** 2 + eps)
@@ -175,20 +179,40 @@ def _classify_material(texture_responses: dict) -> torch.Tensor:
     stack = torch.stack([texture_responses[n] for n in names], dim=-1)  # (B, C, H, W, 9)
     _, argmax = stack.max(dim=-1)  # (B, C, H, W)
 
-    # Map argmax of 9 classes → 4 material types
-    # level(0)=flat, spot(2)=skin, edge(1)=line_art, ripple(3)=fabric
-    # mixed responses get interpolated
-    material = torch.zeros_like(argmax, dtype=torch.uint8)
-    for idx, name in enumerate(names):
-        if name == "spot" or name == "level_spot" or name == "spot_level":
-            material[argmax == idx] = 1  # skin/texture
-        elif name == "edge" or name == "level_edge" or name == "edge_level":
-            material[argmax == idx] = 2  # line art
-        elif name == "ripple" or name == "wave":
-            material[argmax == idx] = 3  # fabric
-        else:
-            material[argmax == idx] = 0  # flat
-
+    # Map the 9 response indices to 4 material types with a pure
+    # torch.where chain (elementwise) -- boolean-mask index_put
+    # dispatches into the XPU Indexing kernel.
+    #   flat=0: level(0)      skin=1: spot(2), level_spot(7), spot_level(8)
+    #   line=2: edge(1), level_edge(5), edge_level(6)
+    #   fabric=3: ripple(3), wave(4)
+    val_flat = torch.zeros_like(argmax, dtype=torch.uint8)
+    val_skin = torch.full_like(argmax, 1, dtype=torch.uint8)
+    val_line = torch.full_like(argmax, 2, dtype=torch.uint8)
+    val_fabric = torch.full_like(argmax, 3, dtype=torch.uint8)
+    material = torch.where(
+        argmax == 2, val_skin,
+        torch.where(
+            argmax == 7, val_skin,
+            torch.where(
+                argmax == 8, val_skin,
+                torch.where(
+                    argmax == 1, val_line,
+                    torch.where(
+                        argmax == 5, val_line,
+                        torch.where(
+                            argmax == 6, val_line,
+                            torch.where(
+                                argmax == 3, val_fabric,
+                                torch.where(
+                                    argmax == 4, val_fabric, val_flat,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
     return material
 
 
@@ -282,9 +306,15 @@ def _quantile_variance_preserve(
     centered = d - mean
 
     abs_centered = centered.abs()
-    current_q95 = torch.quantile(
-        abs_centered.flatten(2), 0.95, dim=2, keepdim=True
-    ).unsqueeze(-1).clamp(min=eps)
+    q_input = abs_centered.flatten(2)
+    if q_input.device.type == "cuda":
+        current_q95 = torch.quantile(q_input, 0.95, dim=2, keepdim=True)
+    else:
+        # torch.quantile is unreliable on XPU/MPS (torch-xpu-ops issue
+        # #4020: quantile/statistical assertion failures).  The tensor is
+        # small (B*C, H*W); compute on CPU for identical math.
+        current_q95 = torch.quantile(q_input.detach().cpu(), 0.95, dim=2, keepdim=True).to(q_input.device)
+    current_q95 = current_q95.unsqueeze(-1).clamp(min=eps)
 
     if step_index == 0 or ema_q95 is None:
         return denoised, current_q95.detach().clone()
@@ -387,15 +417,25 @@ def _adaptive_velocity_normalize(
 def _central_gradients(v: torch.Tensor):
     """Central differences with edge-replicated padding.
 
-    Uses torch.cat for padding instead of ``F.pad(mode="reflect")``,
-    which crashes on some backends (e.g. Intel XPU SYCL kernels throw
-    index-out-of-bounds for 4D reflect padding).  Replicating the edge
-    pixel differs from reflect only on the outermost row/column, which
-    is negligible for the structure tensor computation."""
-    v_pad = torch.cat([v[..., :1], v, v[..., -1:]], dim=-1)
-    v_pad = torch.cat([v_pad[..., :1, :], v_pad, v_pad[..., -1:, :]], dim=-2)
-    v_x = v_pad[..., 1:-1, 2:] - v_pad[..., 1:-1, :-2]
-    v_y = v_pad[..., 2:, 1:-1] - v_pad[..., :-2, 1:-1]
+    Uses ``F.pad(mode="replicate")`` (a pure copy kernel) instead of the
+    torch.cat-of-slices construction, and ``narrow()`` with explicit
+    positive indices for the differencing -- ``F.pad(mode="reflect")``
+    and mask-based scatter crash on some backends (e.g. Intel XPU SYCL
+    kernels throw index-out-of-bounds for 4D reflect padding).
+    Replicating the edge pixel differs from reflect only on the
+    outermost row/column, which is negligible for the structure tensor
+    computation."""
+    # Edge-replicated padding via F.pad(mode="replicate") (pure copy kernel;
+    # the historical XPU crash was specific to mode="reflect") and central
+    # differences via narrow() with explicit positive indices.  The interior
+    # narrow() keeps the (..., H, W) output shape of the torch.cat version.
+    v_pad = F.pad(v, (1, 1, 1, 1), mode="replicate")
+    v_x = (
+        v_pad.narrow(-1, 2, v.shape[-1]) - v_pad.narrow(-1, 0, v.shape[-1])
+    ).narrow(-2, 1, v.shape[-2])
+    v_y = (
+        v_pad.narrow(-2, 2, v.shape[-2]) - v_pad.narrow(-2, 0, v.shape[-2])
+    ).narrow(-1, 1, v.shape[-1])
     return v_x, v_y
 
 
@@ -518,7 +558,7 @@ class InfinityScheduler:
 
     @property
     def sigmas(self) -> torch.Tensor:
-        u = torch.linspace(0.0, 1.0, self.steps)
+        u = torch.linspace(0.0, 1.0, self.steps, device="cpu")
 
         # Hyperbolic tail parameter: 0.0 at N <= 4, saturating at 1.80 for N > 50
         delta = max(0.0, min(1.80, (float(self.steps) - 4.0) / 26.0))
@@ -614,9 +654,10 @@ class InfinitySampler:
         if sigmas.ndim != 1 or sigmas.numel() < 2:
             raise ValueError("Invalid sigmas tensor")
 
-        if sigmas[-1].abs() > 1e-6:
+        last_idx = sigmas.shape[0] - 1
+        if sigmas[last_idx].abs() > 1e-6:
             sigmas = sigmas.clone()
-            sigmas[-1] = 0.0
+            sigmas[last_idx] = 0.0
 
         total_steps = sigmas.numel() - 1
         ema_q95 = None
