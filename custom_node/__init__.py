@@ -55,3 +55,7 @@ if _has_comfy and _sampler_fn is not None:
         print("# Registered seniourious-pure sampler with early stochastic and late detail stages")
     except Exception:
         pass
+
+# No custom nodes; scheduler/sampler registered via side effects above.
+NODE_CLASS_MAPPINGS = {}
+NODE_DISPLAY_NAME_MAPPINGS = {}
