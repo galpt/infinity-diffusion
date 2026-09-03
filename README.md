@@ -5,7 +5,8 @@ This branch follows the [Seniourious](https://arxiv.org/abs/2311.06845) paper.
 ## Quick Start
 
 ```bash
-git checkout seniourious-pure
+git clone -b seniourious-pure --depth 1 https://github.com/galpt/infinity-diffusion.git
+cd infinity-diffusion
 bash comfy-seniourious-pure.sh /path/to/ComfyUI install
 ```
 
