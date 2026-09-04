@@ -1,6 +1,6 @@
-# Era Solver
+# ERA Solver
 
-This branch follows the [ERA paper](https://arxiv.org/abs/2301.12935).
+This branch follows the [ERA Solver](https://arxiv.org/abs/2301.12935) paper.
 
 ## Quick Start
 
@@ -10,7 +10,7 @@ cd infinity-diffusion
 bash comfy-era-solver.sh /path/to/ComfyUI install
 ```
 
-Restart ComfyUI so the new entries are loaded. In KSampler set sampler to era_solver and scheduler to any. Use sampler=era_solver scheduler=any for the intended path. Sampling runs predictor corrector by default with no extra knobs to tune.
+Restart ComfyUI so the new entries are loaded. In KSampler set sampler to `era_solver` and scheduler to any.
 
 Uninstall with `bash comfy-era-solver.sh /path/to/ComfyUI uninstall`.
 
