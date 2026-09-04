@@ -45,6 +45,13 @@ _PROXY_CLAMP_MAX = 100.0
 _LOGSNR_FOR_ZERO = 30.0
 
 
+# Bound for Lagrange weights. Uniform one step extrapolation with order four
+# gives magnitudes up to six, so twice that marks ill conditioned gaps where
+# the Normal tail jumps several log SNR units and the update falls back to
+# the DDIM form with no extra call.
+_MAX_LAGRANGE_WEIGHT = 12.0
+
+
 def _sigma_to_alpha(sigma: float) -> float:
     """Map sigma to alpha with variance preserving form."""
     value = float(sigma)
@@ -419,24 +426,29 @@ def sample_era_solver(
             base_logs = [float(_sigma_to_logsnr(float(sigmas_cpu[int(j)].item()))) for j in picked]
             target_log = float(_sigma_to_logsnr(float(sigma_next)))
             weights = _lagrange_weights(float(target_log), [float(v) for v in base_logs])
-            wten = torch.tensor([float(v) for v in weights], dtype=cur.dtype, device=cur.device)
-            stacked = torch.stack([extended[int(j)].to(dtype=cur.dtype, device=cur.device) for j in picked], dim=0)
-            while int(wten.ndim) < int(stacked.ndim):
-                wten = wten.unsqueeze(-1)
-            pred = torch.sum(wten * stacked, dim=0)
-            if not bool(torch.isfinite(pred).all().item()):
-                raise ValueError("predicted noise must be finite")
-            if int(len(extended)) < 3:
-                raise ValueError("buffer too short for correction")
-            eps_a = extended[int(len(extended)) - 1]
-            eps_b = extended[int(len(extended)) - 2]
-            eps_c = extended[int(len(extended)) - 3]
-            corrected = (9.0 * pred + 19.0 * eps_a - 5.0 * eps_b + 1.0 * eps_c) / 24.0
-            if not bool(torch.isfinite(corrected).all().item()):
-                raise ValueError("corrected noise must be finite")
-            cur = _ddim_step(cur, corrected, float(sigma), float(sigma_next))
-            buffer.append(eps_now.detach().clone())
-            pending = pred.detach().clone()
+            if max(abs(float(v)) for v in weights) > float(_MAX_LAGRANGE_WEIGHT):
+                cur = _ddim_step(cur, eps_now, float(sigma), float(sigma_next))
+                buffer.append(eps_now.detach().clone())
+                pending = None
+            else:
+                wten = torch.tensor([float(v) for v in weights], dtype=cur.dtype, device=cur.device)
+                stacked = torch.stack([extended[int(j)].to(dtype=cur.dtype, device=cur.device) for j in picked], dim=0)
+                while int(wten.ndim) < int(stacked.ndim):
+                    wten = wten.unsqueeze(-1)
+                pred = torch.sum(wten * stacked, dim=0)
+                if not bool(torch.isfinite(pred).all().item()):
+                    raise ValueError("predicted noise must be finite")
+                if int(len(extended)) < 3:
+                    raise ValueError("buffer too short for correction")
+                eps_a = extended[int(len(extended)) - 1]
+                eps_b = extended[int(len(extended)) - 2]
+                eps_c = extended[int(len(extended)) - 3]
+                corrected = (9.0 * pred + 19.0 * eps_a - 5.0 * eps_b + 1.0 * eps_c) / 24.0
+                if not bool(torch.isfinite(corrected).all().item()):
+                    raise ValueError("corrected noise must be finite")
+                cur = _ddim_step(cur, corrected, float(sigma), float(sigma_next))
+                buffer.append(eps_now.detach().clone())
+                pending = pred.detach().clone()
         if not bool(torch.isfinite(cur).all().item()):
             raise ValueError("latents must stay finite")
         if tuple(cur.shape) != tuple(x.shape):
