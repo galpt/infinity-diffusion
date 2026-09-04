@@ -227,7 +227,7 @@ def _eps_from_denoised(x: torch.Tensor, denoised: torch.Tensor, sigma: float) ->
 def _ddim_step(
     x: torch.Tensor, eps: torch.Tensor, sigma: float, sigma_next: float
 ) -> torch.Tensor:
-    """DDIM update from sigma to sigma_next with alpha form."""
+    """DDIM update from sigma to sigma_next with Comfy sigma scaling."""
     s = float(sigma)
     sn = float(sigma_next)
     if not math.isfinite(float(s)) or not math.isfinite(float(sn)):
@@ -244,20 +244,9 @@ def _ddim_step(
         raise ValueError("input must be finite")
     if not bool(torch.isfinite(eps).all().item()):
         raise ValueError("noise must be finite")
-    if float(sn) == 0.0:
-        out = x - float(s) * eps
-        if not bool(torch.isfinite(out).all().item()):
-            raise ValueError("update must stay finite")
-        return out
-    alpha = float(_sigma_to_alpha(float(s)))
-    alpha_next = float(_sigma_to_alpha(float(sn)))
-    if not alpha > 0.0 or not alpha_next > 0.0:
-        raise ValueError("alpha must stay positive")
-    if not alpha <= 1.0 or not alpha_next <= 1.0:
-        raise ValueError("alpha must not exceed one")
-    ratio = float(math.sqrt(float(alpha_next) / float(alpha)))
-    term = float(math.sqrt(max(0.0, 1.0 - float(alpha_next))) - ratio * math.sqrt(max(0.0, 1.0 - float(alpha))))
-    out = ratio * x + float(term) * eps
+    # Paper Eq8 is in scaled space with alpha 1/(1+sigma^2); unscaling to Comfy
+    # latents x = x0 + sigma eps gives x + (sn - s) eps, the Euler and to_d form.
+    out = x + (float(sn) - float(s)) * eps
     if not bool(torch.isfinite(out).all().item()):
         raise ValueError("update must stay finite")
     return out
@@ -345,6 +334,7 @@ def _reject_flow_or_v(model: object, extra_args: object) -> None:
                     raise ValueError("flow or v prediction setup is not supported")
 
 
+@torch.no_grad()
 def sample_era_solver(
     model,
     x: torch.Tensor,
@@ -411,8 +401,14 @@ def sample_era_solver(
                 delta = float(_proxy_error(pending, eps_now))
             except ValueError:
                 raise
-        warmup = bool(int(i) < int(order) - 1) or bool(not use_era)
-        if warmup:
+        if callback is not None:
+            callback({"x": cur, "i": int(i), "sigma": sigmas[int(i)], "sigma_hat": sigmas[int(i)], "denoised": denoised})
+        # Terminal denoising matches Comfy solvers that return denoised directly.
+        if float(sigma_next) == 0.0:
+            cur = denoised
+            buffer.append(eps_now.detach().clone())
+            pending = None
+        elif bool(int(i) < int(order) - 1) or bool(not use_era):
             eps_used = eps_now
             cur = _ddim_step(cur, eps_used, float(sigma), float(sigma_next))
             buffer.append(eps_now.detach().clone())
@@ -421,9 +417,7 @@ def sample_era_solver(
             extended = [e for e in buffer] + [eps_now.detach().clone()]
             picked = _select_indices(int(i), float(delta))
             base_logs = [float(_sigma_to_logsnr(float(sigmas_cpu[int(j)].item()))) for j in picked]
-            target_log = float(_sigma_to_logsnr(float(sigma_next) if float(sigma_next) > 0.0 else float(sigma) / 2.0))
-            if float(sigma_next) == 0.0:
-                target_log = float(_sigma_to_logsnr(float(sigma))) + 2.0
+            target_log = float(_sigma_to_logsnr(float(sigma_next)))
             weights = _lagrange_weights(float(target_log), [float(v) for v in base_logs])
             wten = torch.tensor([float(v) for v in weights], dtype=cur.dtype, device=cur.device)
             stacked = torch.stack([extended[int(j)].to(dtype=cur.dtype, device=cur.device) for j in picked], dim=0)
@@ -449,8 +443,6 @@ def sample_era_solver(
             raise ValueError("output must keep input shape")
         if str(cur.device) != str(x.device) or str(cur.dtype) != str(x.dtype):
             raise ValueError("output must keep input dtype and device")
-        if callback is not None:
-            callback({"x": cur, "i": int(i), "sigma": sigmas[int(i)], "denoised": denoised})
     if tuple(cur.shape) != tuple(x.shape):
         raise ValueError("output must keep input shape")
     return cur
