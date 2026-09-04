@@ -1,4 +1,4 @@
-"""ComfyUI custom node for seniourious-pure."""
+"""ComfyUI custom node for nv ays."""
 
 import os
 import sys
@@ -21,41 +21,23 @@ except Exception:
     _has_comfy = False
 
 try:
-    from seniourious_pure_comfyui.integration import (
-        seniourious_pure_scheduler as _scheduler_fn,
+    from nv_ays_comfyui.integration import (
+        nv_ays_scheduler as _scheduler_fn,
     )
 except Exception:
     _scheduler_fn = None  # type: ignore
 
-try:
-    from seniourious_pure_diffusion import sample_seniourious_pure as _sampler_fn
-except Exception:
-    _sampler_fn = None  # type: ignore
-
-_NAME = "seniourious-pure"
+_NAME = "nv_ays"
 
 if _has_comfy and _scheduler_fn is not None:
-    samplers.SCHEDULER_HANDLERS[_NAME] = SchedulerHandler(_scheduler_fn)
+    samplers.SCHEDULER_HANDLERS[_NAME] = SchedulerHandler(_scheduler_fn, use_ms=True)
     if _NAME not in samplers.SCHEDULER_NAMES:
         samplers.SCHEDULER_NAMES.append(_NAME)
-    print("# Registered seniourious-pure scheduler, use with seniourious-pure sampler")
+    print("# Registered nv ays scheduler for use with built in solvers")
 else:
     if not _has_comfy:
-        print("# seniourious-pure: ComfyUI not found, registration skipped")
+        print("# nv ays ComfyUI not found, registration skipped")
 
-if _has_comfy and _sampler_fn is not None:
-    try:
-        import comfy.k_diffusion.sampling as _sampling
-
-        setattr(_sampling, "sample_" + _NAME, _sampler_fn)
-        for _attr in ("KSAMPLER_NAMES", "SAMPLER_NAMES"):
-            _lst = getattr(samplers, _attr, None)
-            if isinstance(_lst, list) and _NAME not in _lst:
-                _lst.append(_NAME)
-        print("# Registered seniourious-pure sampler with early stochastic and late detail stages")
-    except Exception:
-        pass
-
-# No custom nodes; scheduler/sampler registered via side effects above.
+# No custom nodes. Scheduler registered via side effects above.
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
