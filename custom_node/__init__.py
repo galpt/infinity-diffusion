@@ -1,4 +1,4 @@
-"""ComfyUI custom node for seniourious-pure."""
+"""ComfyUI custom node for era solver."""
 
 import os
 import sys
@@ -12,36 +12,18 @@ for _p in _candidates:
 
 try:
     import comfy.samplers as samplers
-    from comfy.samplers import SchedulerHandler
 
     _has_comfy = True
 except Exception:
     samplers = None  # type: ignore
-    SchedulerHandler = None  # type: ignore
     _has_comfy = False
 
 try:
-    from seniourious_pure_comfyui.integration import (
-        seniourious_pure_scheduler as _scheduler_fn,
-    )
-except Exception:
-    _scheduler_fn = None  # type: ignore
-
-try:
-    from seniourious_pure_diffusion import sample_seniourious_pure as _sampler_fn
+    from era_solver_diffusion import sample_era_solver as _sampler_fn
 except Exception:
     _sampler_fn = None  # type: ignore
 
-_NAME = "seniourious-pure"
-
-if _has_comfy and _scheduler_fn is not None:
-    samplers.SCHEDULER_HANDLERS[_NAME] = SchedulerHandler(_scheduler_fn)
-    if _NAME not in samplers.SCHEDULER_NAMES:
-        samplers.SCHEDULER_NAMES.append(_NAME)
-    print("# Registered seniourious-pure scheduler, use with seniourious-pure sampler")
-else:
-    if not _has_comfy:
-        print("# seniourious-pure: ComfyUI not found, registration skipped")
+_NAME = "era_solver"
 
 if _has_comfy and _sampler_fn is not None:
     try:
@@ -52,10 +34,11 @@ if _has_comfy and _sampler_fn is not None:
             _lst = getattr(samplers, _attr, None)
             if isinstance(_lst, list) and _NAME not in _lst:
                 _lst.append(_NAME)
-        print("# Registered seniourious-pure sampler with early stochastic and late detail stages")
+        print("# Registered era solver sampler, works with any sigmas")
     except Exception:
         pass
+else:
+    if not _has_comfy:
+        print("# Era solver ComfyUI not found, registration skipped")
 
-# No custom nodes; scheduler/sampler registered via side effects above.
 NODE_CLASS_MAPPINGS = {}
-NODE_DISPLAY_NAME_MAPPINGS = {}
