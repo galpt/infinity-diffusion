@@ -1,6 +1,6 @@
 # NV AYS
 
-This branch follows the [Align Your Steps](https://arxiv.org/abs/2404.14507) paper. You may want to check their [blog post](https://research.nvidia.com/labs/toronto-ai/AlignYourSteps/) too.
+This branch follows the [Align Your Steps](https://arxiv.org/abs/2404.14507) paper. You may want to check their [project page](https://research.nvidia.com/labs/toronto-ai/AlignYourSteps/) too.
 
 ## Quick Start
 
