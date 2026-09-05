@@ -56,7 +56,21 @@ Synthetic probes use a frozen portrait with known noise and state dependent deno
 
 Laplacian variance ratios stay at 1.00 on the portrait probe with leak and osc probes at 0.89 to 1.14, so sharpness is preserved while the tail and guard calm terminal overshoot.
 
-Figure: TODO — no render is included yet. A modest approved render will be added separately once available.
+Provenance is the polished rerun on the modest portrait probe with seed 995733938372178, and the rerun kept the frozen `sample_lumen` math unchanged.
+
+![lumen vs euler](assets/lumen_vs_euler.png)
+
+The figure shows direct PieModels renders from the same seed with Normal scheduler and CFG 6, and panels read original then lumen then euler.
+
+The original anchor uses euler at 30 steps, and the pair uses lumen at 20 steps and euler at 20 steps.
+
+All renders use checkpoint `pieModels_nutella.safetensors` at 832 by 1216 with seed 20260905.
+
+No pixel space noise proxy is used, and each panel is a direct VAE decode.
+
+The render prompt is a modest studio portrait with a high neck dress and neutral expression, since the main branch prompt was not reused for rendering.
+
+See the main branch prompt at https://github.com/galpt/infinity-diffusion/tree/main.
 
 At 5 steps the first step is Euler with no history, so startup cost remains. Lumen qualifies as second order while Euler stays first order, and it needs only history so NFE stays at one per step. It is deterministic with no noise draws, it is invariant across tested schedules, and the terminal step returns *D* exactly.
 
