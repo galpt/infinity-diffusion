@@ -1,4 +1,4 @@
-"""ComfyUI custom node for seniourious-pure."""
+"""ComfyUI custom node for lumen."""
 
 import os
 import sys
@@ -12,37 +12,20 @@ for _p in _candidates:
 
 try:
     import comfy.samplers as samplers
-    from comfy.samplers import SchedulerHandler
 
     _has_comfy = True
 except Exception:
-    samplers = None  # type: ignore
-    SchedulerHandler = None  # type: ignore
+    samplers = None
     _has_comfy = False
 
 try:
-    from seniourious_pure_comfyui.integration import (
-        seniourious_pure_scheduler as _scheduler_fn,
-    )
+    from lumen_diffusion import sample_lumen as _sampler_fn
 except Exception:
-    _scheduler_fn = None  # type: ignore
+    _sampler_fn = None
 
-try:
-    from seniourious_pure_diffusion import sample_seniourious_pure as _sampler_fn
-except Exception:
-    _sampler_fn = None  # type: ignore
+_NAME = "lumen"
 
-_NAME = "seniourious-pure"
-
-if _has_comfy and _scheduler_fn is not None:
-    samplers.SCHEDULER_HANDLERS[_NAME] = SchedulerHandler(_scheduler_fn)
-    if _NAME not in samplers.SCHEDULER_NAMES:
-        samplers.SCHEDULER_NAMES.append(_NAME)
-    print("# Registered seniourious-pure scheduler, use with seniourious-pure sampler")
-else:
-    if not _has_comfy:
-        print("# seniourious-pure: ComfyUI not found, registration skipped")
-
+# Sampler only, no scheduler is registered here.
 if _has_comfy and _sampler_fn is not None:
     try:
         import comfy.k_diffusion.sampling as _sampling
@@ -52,10 +35,15 @@ if _has_comfy and _sampler_fn is not None:
             _lst = getattr(samplers, _attr, None)
             if isinstance(_lst, list) and _NAME not in _lst:
                 _lst.append(_NAME)
-        print("# Registered seniourious-pure sampler with early stochastic and late detail stages")
+        # Short note, kept plain for the console.
+        print("# Registered lumen sampler")
     except Exception:
         pass
+else:
+    if not _has_comfy:
+        # Plain note, ComfyUI is simply absent here.
+        print("# lumen sampler skipped, ComfyUI was not found")
 
-# No custom nodes; scheduler/sampler registered via side effects above.
+# No custom nodes, sampler is registered through side effects above.
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
