@@ -22,7 +22,7 @@ cd infinity-diffusion
 bash comfy-lumen.sh /path/to/ComfyUI install
 ```
 
-Restart ComfyUI so the new entry is loaded. In KSampler choose lumen as the sampler and keep any built in scheduler. Sampling needs no extra settings.
+Restart ComfyUI so the new entry is loaded. In KSampler choose `lumen` (LUMEN) as the sampler and keep any built in scheduler. Sampling needs no extra settings.
 
 Remove the node with the matching uninstall command.
 
@@ -45,7 +45,7 @@ def sample_lumen(
 
 ## Results
 
-Synthetic probes use a frozen portrait with known noise and state dependent denoisers, so error is measured exactly. The reference is a 1000 step Euler run, and coarse runs start from the same noise. NFE equals steps for both lumen and Euler.
+Synthetic probes use a frozen portrait with known noise and state dependent denoisers, so error is measured exactly. The reference is a 1000 step Euler run, and coarse runs start from the same noise. NFE equals steps for both LUMEN and Euler.
 
 | Steps | Euler PSNR | LUMEN PSNR | Gain dB | NFE |
 |---|---|---|---|---|
@@ -58,11 +58,11 @@ Laplacian variance ratios stay at 1.00 on the portrait probe with leak and osc p
 
 Provenance is the polished rerun on the modest portrait probe with seed 995733938372178, and the rerun kept the frozen `sample_lumen` math unchanged.
 
-![lumen vs euler](assets/lumen_vs_euler.png)
+![LUMEN vs Euler](assets/lumen_vs_euler.png)
 
-The figure shows direct PieModels renders from the same seed with Normal scheduler and CFG 6, and panels read original then lumen then euler.
+The figure shows direct PieModels renders from the same seed with Normal scheduler and CFG 6, and panels read original then LUMEN then Euler.
 
-The original anchor uses euler at 30 steps, and the pair uses lumen at 20 steps and euler at 20 steps.
+The original anchor uses Euler at 30 steps, and the pair uses LUMEN at 20 steps and Euler at 20 steps.
 
 All renders use checkpoint `pieModels_nutella.safetensors` at 832 by 1216 with seed 20260905.
 
@@ -72,7 +72,7 @@ The render prompt is a modest studio portrait with a high neck dress and neutral
 
 See the main branch prompt at https://github.com/galpt/infinity-diffusion/tree/main.
 
-At 5 steps the first step is Euler with no history, so startup cost remains. Lumen qualifies as second order while Euler stays first order, and it needs only history so NFE stays at one per step. It is deterministic with no noise draws, it is invariant across tested schedules, and the terminal step returns *D* exactly.
+At 5 steps the first step is Euler with no history, so startup cost remains. LUMEN qualifies as second order while Euler stays first order, and it needs only history so NFE stays at one per step. It is deterministic with no noise draws, it is invariant across tested schedules, and the terminal step returns *D* exactly.
 
 ## Layout
 
