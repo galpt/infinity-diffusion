@@ -1,4 +1,4 @@
-"""ComfyUI custom node for lumen."""
+"""ComfyUI custom nodes for lumen and Euler-M, sampler only."""
 
 import os
 import sys
@@ -19,30 +19,46 @@ except Exception:
     _has_comfy = False
 
 try:
-    from lumen_diffusion import sample_lumen as _sampler_fn
+    from lumen_diffusion import sample_lumen as _lumen_fn
+except Exception:
+    _lumen_fn = None
+
+try:
+    from euler_m_diffusion import sample_euler_m as _sampler_fn
 except Exception:
     _sampler_fn = None
 
-_NAME = "lumen"
+_NAME = "euler_m"
+_LUMEN_NAME = "lumen"
 
-# Sampler only, no scheduler is registered here.
-if _has_comfy and _sampler_fn is not None:
+
+def _register(name, fn):
+    """Register one sampler name with ComfyUI side effects."""
+    if not (_has_comfy and fn is not None):
+        return False
     try:
         import comfy.k_diffusion.sampling as _sampling
 
-        setattr(_sampling, "sample_" + _NAME, _sampler_fn)
+        setattr(_sampling, "sample_" + name, fn)
         for _attr in ("KSAMPLER_NAMES", "SAMPLER_NAMES"):
             _lst = getattr(samplers, _attr, None)
-            if isinstance(_lst, list) and _NAME not in _lst:
-                _lst.append(_NAME)
-        # Short note, kept plain for the console.
-        print("# Registered lumen sampler")
+            if isinstance(_lst, list) and name not in _lst:
+                _lst.append(name)
+        return True
     except Exception:
-        pass
-else:
-    if not _has_comfy:
-        # Plain note, ComfyUI is simply absent here.
-        print("# lumen sampler skipped, ComfyUI was not found")
+        return False
+
+
+# Sampler only, no scheduler is registered here.
+_register(_LUMEN_NAME, _lumen_fn)
+_registered = _register(_NAME, _sampler_fn)
+
+if _registered:
+    # Short note, kept plain for the console.
+    print("# Registered euler_m sampler")
+elif not _has_comfy:
+    # Plain note, ComfyUI is simply absent here.
+    print("# euler_m sampler skipped, ComfyUI was not found")
 
 # No custom nodes, sampler is registered through side effects above.
 NODE_CLASS_MAPPINGS = {}
