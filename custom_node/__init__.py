@@ -1,4 +1,4 @@
-"""ComfyUI custom nodes for lumen and Euler-M, sampler only."""
+"""ComfyUI custom node for Euler-M, sampler only."""
 
 import os
 import sys
@@ -19,17 +19,11 @@ except Exception:
     _has_comfy = False
 
 try:
-    from lumen_diffusion import sample_lumen as _lumen_fn
-except Exception:
-    _lumen_fn = None
-
-try:
     from euler_m_diffusion import sample_euler_m as _sampler_fn
 except Exception:
     _sampler_fn = None
 
 _NAME = "euler_m"
-_LUMEN_NAME = "lumen"
 
 
 def _register(name, fn):
@@ -50,7 +44,6 @@ def _register(name, fn):
 
 
 # Sampler only, no scheduler is registered here.
-_register(_LUMEN_NAME, _lumen_fn)
 _registered = _register(_NAME, _sampler_fn)
 
 if _registered:

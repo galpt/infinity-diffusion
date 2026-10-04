@@ -16,6 +16,8 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
 _CORE_FILE = _ROOT / "euler_m_diffusion.py"
 _NODE_FILE = _ROOT / "custom_node" / "__init__.py"
 _ADAPTER_FILE = _ROOT / "euler_m_comfyui" / "integration.py"
+_INSTALLER_FILE = _ROOT / "comfy-euler-m.sh"
+_README_FILE = _ROOT / "README.md"
 
 
 def _load_core():
@@ -133,9 +135,14 @@ def test_registration_sampler_only():
         mock_samplers, "SCHEDULER_HANDLERS", {}
     )
     assert mod.NODE_CLASS_MAPPINGS == {}
+    assert mod.NODE_DISPLAY_NAME_MAPPINGS == {}
+    assert set(mock_samplers.KSAMPLER_NAMES) == {"euler", "euler_m"}
+    assert set(mock_samplers.SAMPLER_NAMES) == {"euler", "euler_m"}
+    assert set(k for k in dir(mock_sampling) if k.startswith("sample_")) == {"sample_euler_m"}
     src = _NODE_FILE.read_text()
     assert "_NAME" in src
     assert "euler_m" in src
+    assert src.count("_register(") == 2
 
 
 def test_signature_defaults():
@@ -486,3 +493,36 @@ def test_guards_fail_closed():
         assert False
     except ValueError:
         pass
+
+
+def test_branch_layout_exclusive():
+    """Branch holds exactly one sampler core, adapter, installer, and test."""
+    assert _CORE_FILE.exists()
+    assert _ADAPTER_FILE.exists()
+    assert (_ROOT / "euler_m_comfyui" / "__init__.py").exists()
+    assert _INSTALLER_FILE.exists()
+    assert _NODE_FILE.exists()
+    top_py = sorted(p.name for p in _ROOT.glob("*.py"))
+    assert top_py == ["euler_m_diffusion.py"]
+    installers = sorted(p.name for p in _ROOT.glob("comfy-*.sh"))
+    assert installers == ["comfy-euler-m.sh"]
+    sampler_tests = sorted(p.name for p in (_ROOT / "tests-unit" / "samplers").glob("test_*.py"))
+    assert sampler_tests == ["test_euler_m.py"]
+    adapter_dirs = sorted(p.name for p in _ROOT.glob("*_comfyui") if p.is_dir())
+    assert adapter_dirs == ["euler_m_comfyui"]
+
+
+def test_installer_and_readme_presence():
+    """Installer script and README section exist for the sampler with SDE note."""
+    assert _INSTALLER_FILE.exists()
+    text = _INSTALLER_FILE.read_text()
+    assert "euler_m" in text or "euler-m" in text
+    assert "custom_nodes" in text
+    assert _README_FILE.exists()
+    readme = _README_FILE.read_text()
+    assert "# Euler-M" in readme
+    assert "euler" in readme.lower()
+    assert "SDE" in readme
+    assert "eta" in readme.lower()
+    assert "sampler/euler-maruyama" in readme
+    assert "comfy-euler-m.sh" in readme
