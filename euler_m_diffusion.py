@@ -6,14 +6,13 @@ written as an SDE with the same marginals, which adds a controlled noise
 reinjection on top of the ODE drift. This module converts that ODE Euler step
 into its ancestral Euler-Maruyama SDE form, sampler only with no scheduler.
 
-Audit note: ComfyUI has no function literally named euler-maruyama or
-euler-m. The closest entries are ``sample_euler`` (deterministic ODE),
+Compatibility: ComfyUI provides ``sample_euler`` (deterministic ODE),
 ``sample_euler_ancestral`` plus its ``_RF`` variant (eta-gated SDE, which is
 the Euler-Maruyama ancestral form), and ``dpmpp_sde`` (tree-based SDE that
-couples noise across steps). This module is therefore not a duplicate: it is
-a theory-explicit ancestral Euler-Maruyama sampler with ``eta = 0`` exactly
-equal to Euler and ``eta = 1`` (default) giving the full SDE. The derivation
-follows https://sotaaz.com/post/sde-vs-ode-en in the Anderson spirit.
+couples noise across steps). This module provides a theory-explicit
+ancestral Euler-Maruyama sampler with ``eta = 0`` exactly equal to Euler
+and ``eta = 1`` (default) giving the full SDE. The derivation follows
+https://sotaaz.com/post/sde-vs-ode-en in the Anderson spirit.
 
 Sampler only: scheduling stays with the built-in choices, this module only
 steps through the given sigmas. Comfy helpers ``to_d``,
@@ -47,7 +46,7 @@ __version__ = "1.0.0"
 EULER_M_TERMINAL_ATOL = 1e-10
 
 
-try:  # Prefer ComfyUI originals, never copy them.
+try:  # Reuse ComfyUI originals by import.
     from comfy.k_diffusion.sampling import to_d as _comfy_to_d
 except Exception:
     _comfy_to_d = None

@@ -1,20 +1,24 @@
 # Euler-M
 
-Euler-M is a sampler-only ancestral Euler-Maruyama SDE. It converts the ComfyUI Euler ODE step into its reverse SDE form in the Anderson spirit, following https://sotaaz.com/post/sde-vs-ode-en. No scheduler is added, scheduling stays with the built in choices.
+## Overview
 
-Audit note: ComfyUI has no function literally named euler-maruyama or euler-m. The closest entries are `sample_euler` (deterministic ODE), `sample_euler_ancestral` plus its RF variant (eta-gated SDE, the Euler-Maruyama ancestral form), and `dpmpp_sde` (tree-based SDE). Euler-M is therefore theory-explicit rather than a duplicate: the ancestral split and the `eta = 0` identity below are documented and tested.
+Euler-M is a sampler-only ancestral Euler-Maruyama SDE. The ComfyUI Euler ODE step is converted into its reverse SDE form in the Anderson spirit, following https://sotaaz.com/post/sde-vs-ode-en. No scheduler is added; scheduling remains with the built-in choices.
+
+## Compatibility
+
+ComfyUI provides `sample_euler` (deterministic ODE), `sample_euler_ancestral` plus its `_RF` variant (eta-gated SDE, the Euler-Maruyama ancestral form), and `dpmpp_sde` (tree-based SDE that couples noise across steps). Euler-M provides the ancestral Euler-Maruyama form with `eta = 0` exactly equal to Euler and `eta = 1` (default) giving the full SDE. The derivation follows https://sotaaz.com/post/sde-vs-ode-en in the Anderson spirit.
 
 ## Derivation
 
-The ODE drift is `d = (x - D) / sigma` with Euler update `x + d * dt`. The ancestral SDE splits each interval into a deterministic down part and a noise up part via `get_ancestral_step(sigma, sigma_next, eta)`. The update is `x + d * (sigma_down - sigma) + noise * s_noise * sigma_up`. Rectified-flow schedules use the linear blend to `sigma_down` with `alpha = 1 - sigma` and the RF renoise coefficient. The terminal step returns *D* directly with no noise. Comfy helpers `to_d`, `get_ancestral_step`, and `default_noise_sampler` are reused by import, never copied.
+The ODE drift is `d = (x - D) / sigma` with Euler update `x + d * dt`. The ancestral SDE splits each interval into a deterministic down part and a noise up part via `get_ancestral_step(sigma, sigma_next, eta)`. The update is `x + d * (sigma_down - sigma) + noise * s_noise * sigma_up`. Rectified-flow schedules use the linear blend to `sigma_down` with `alpha = 1 - sigma` and the RF renoise coefficient. The terminal step returns *D* directly with no noise. Comfy helpers `to_d`, `get_ancestral_step`, and `default_noise_sampler` are reused by import.
 
 ```python
 x_next = x + d * (sigma_down - sigma) + noise * s_noise * sigma_up
 ```
 
-## Quick Start
+## Installation
 
-Clone this branch with a shallow checkout and run the installer for the ComfyUI path in use.
+Installation uses a shallow branch checkout followed by the installer script. The branch source is `sampler/euler-maruyama` and the helper is `comfy-euler-m.sh`.
 
 ```bash
 git clone --depth 1 -b sampler/euler-maruyama https://github.com/galpt/infinity-diffusion.git
@@ -22,13 +26,15 @@ cd infinity-diffusion
 bash comfy-euler-m.sh /path/to/ComfyUI install
 ```
 
-Restart ComfyUI so the new entry is loaded. In KSampler choose `euler_m` as the sampler and keep any built in scheduler.
+## Usage
 
-Remove the node with the matching uninstall command.
+Activation follows a ComfyUI restart, after which KSampler lists `euler_m` alongside the built-in schedulers. Scheduling remains with the built-in choices. Removal uses the matching uninstall invocation.
 
 ```bash
 bash comfy-euler-m.sh /path/to/ComfyUI uninstall
 ```
+
+## Signatures
 
 The sampler exposes one evaluation per step with two SDE controls.
 
@@ -46,7 +52,7 @@ def sample_euler_m(
 ) -> torch.Tensor:
 ```
 
-`eta` gates the SDE: `0.0` is exactly Euler (deterministic ODE) and `1.0` (default) is the full ancestral SDE. `s_noise` scales the reinjected noise. `noise_sampler` defaults to the Comfy seeded sampler honoring `extra_args["seed"]`. `sample_euler_m_RF` shares the same signature for rectified-flow schedules, and `sample_euler_m` dispatches to it for CONST models. The `eta = 0` invariant is covered by tests: the SDE run matches the Euler baseline within tolerance.
+`eta` gates the SDE: `0.0` is exactly Euler (deterministic ODE) and `1.0` (default) is the full ancestral SDE. `s_noise` scales the reinjected noise. `noise_sampler` defaults to the Comfy seeded sampler honoring `extra_args["seed"]`. `sample_euler_m_RF` shares the same signature for rectified-flow schedules, and `sample_euler_m` dispatches to it for CONST models. With `eta = 0` the SDE run matches the Euler baseline within tolerance.
 
 ## Layout
 
@@ -54,4 +60,9 @@ The core lives in `euler_m_diffusion.py` with the `sample_euler_m` sampler and s
 
 ## License
 
-MIT License. See `LICENSE`.
+MIT License. The text resides in `LICENSE`.
+
+## References
+
+- SDE background: https://sotaaz.com/post/sde-vs-ode-en
+- Upstream samplers: `sample_euler`, `sample_euler_ancestral`, `dpmpp_sde` (ComfyUI)
