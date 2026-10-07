@@ -1,0 +1,236 @@
+{
+ "matrix": {
+  "samplers": [
+   "euler",
+   "milstein"
+  ],
+  "scheduler": "normal",
+  "base_steps": 30,
+  "base_cfg": 7.0,
+  "seed": 377020409264109,
+  "width": 832,
+  "height": 1216,
+  "checkpoint": "waiMatureIllustrious_v30.safetensors",
+  "base_denoise": 1.0,
+  "hires": {
+   "steps": 10,
+   "cfg": 6.0,
+   "denoise": 0.32,
+   "scheduler": "normal",
+   "sampler": "per-sampler (same as base)",
+   "upscale": "LatentUpscaleBy nearest-exact 1.5x",
+   "seed": 377020409264109
+  },
+  "face_detailer": {
+   "steps": 10,
+   "cfg": 6.0,
+   "denoise": 0.25,
+   "guide_size": 512,
+   "guide_size_for": true,
+   "max_size": 1024,
+   "sampler": "per-sampler (same as base)",
+   "scheduler": "normal",
+   "seed": 377020409264109,
+   "feather": 5,
+   "bbox_threshold": 0.5,
+   "bbox_dilation": 10,
+   "bbox_crop_factor": 3,
+   "drop_size": 10,
+   "cycle": 1,
+   "detector": "bbox/face_yolov8m.pt",
+   "note": "all other FaceDetailer params = pieModel workflow verbatim"
+  },
+  "eye_detailer": {
+   "steps": 10,
+   "cfg": 6.0,
+   "denoise": 0.35,
+   "guide_size": 384,
+   "guide_size_for": true,
+   "max_size": 1024,
+   "sampler": "per-sampler (same as base)",
+   "scheduler": "normal",
+   "seed": 377020409264109,
+   "feather": 3,
+   "bbox_threshold": 0.5,
+   "bbox_dilation": 10,
+   "bbox_crop_factor": 3,
+   "drop_size": 10,
+   "cycle": 1,
+   "detector": "bbox/eye_yolov8m.pt",
+   "note": "all other FaceDetailer params = pieModel workflow verbatim"
+  },
+  "workflow": "projx-v2.3-filled-prompts-pieModel.json node types (CheckpointLoaderSimple + 2x CLIPTextEncode + EmptyLatentImage + KSampler base + LatentUpscaleBy + KSampler hires + VAEDecode + 2x UltralyticsDetectorProvider + 2x FaceDetailer + SaveImage); rgthree Power Prompt / SDXL-Empty-Latent(rgthree) / PreviewImage mapped to API equivalents (CLIPTextEncode / EmptyLatentImage 832x1216 / SaveImage) for byte-exact prompts/size/persistence; no sampler changes",
+  "workflow_file": "projx-v2.3-filled-prompts-pieModel.json",
+  "workflow_file_sha256": "267a3befeb099798a32612fb678c4f1689a9ac7af6731a1a7281575e13446454",
+  "workflow_original": {
+   "checkpoint": "pieModels_nutella.safetensors",
+   "preset": "1216 x 832   (landscape)",
+   "base": {
+    "seed": 951392144408813,
+    "control_after_generate": "fixed",
+    "steps": 20,
+    "cfg": 6,
+    "sampler_name": "rbips",
+    "scheduler": "normal",
+    "denoise": 1
+   },
+   "hires": {
+    "seed": 951392144408813,
+    "control_after_generate": "fixed",
+    "steps": 10,
+    "cfg": 6,
+    "sampler_name": "rbips",
+    "scheduler": "normal",
+    "denoise": 0.32
+   },
+   "upscale": {
+    "upscale_method": "nearest-exact",
+    "scale_by": 1.5
+   },
+   "face_detector": "bbox/face_yolov8m.pt",
+   "eye_detector": "bbox/eye_yolov8m.pt"
+  },
+  "workflow_note": "pieModel Eye Note text claims denoise 0.35/steps 15/guide 384 but widgets_values_named actually 10 steps cfg 6.0 (same as Face except guide 384/feather 3/denoise 0.35); used ACTUAL widget values (10/6.0), not Note text; hires 10/6.0/0.32 per widgets; base overridden 30/7.0 per frozen spec",
+  "prompts": "MAIN-BRANCH origin/main README Benchmark fences byte-verbatim (SFW)",
+  "positive_sha256": "0c10744615fe6edcc06fcabe48db84eb91455fed93d56c465e9e552009ce0f7c",
+  "negative_sha256": "969ca3f7f0bc06b495c6a0efa4a1f67262264c8f028be8580d897efe71db5895",
+  "readme_sha256": "a04b03c2f77c58b807edc97770b948f6d4ab8e4b0709ff3a51b568ff63ba8df9",
+  "mode": "fullchain (hires/detailers ON)",
+  "nfe_max_per_render": 60,
+  "nfe_note": "1 NFE per step per sampling stage; detailer NFE conditional on bbox detection (max shown); scheduler sigmas derived server-side by ComfyUI normal scheduler for SDXL",
+  "scheduler_note": "sigmas derived server-side by ComfyUI normal scheduler for SDXL; not re-synthesized here"
+ },
+ "started_utc": "2026-10-07T19:21:36.840001+00:00",
+ "renders": [
+  {
+   "sampler": "euler",
+   "prompt_id": "f75cf963-6b0e-4e0a-be98-31030a206eb0",
+   "ok": true,
+   "wall_s": 130.0,
+   "vram_before": {
+    "used_mib": 987,
+    "free_mib": 2836
+   },
+   "vram_after": {
+    "used_mib": 2493,
+    "free_mib": 1330
+   },
+   "history_echo": {
+    "error": "unexpected prompt type <class 'list'>"
+   },
+   "prompt_echo_seed": null,
+   "outputs": {
+    "13": {
+     "images": [
+      {
+       "filename": "milfullchain_euler_normal_30s_cfg7_00001_.png",
+       "subfolder": "",
+       "type": "output",
+       "metadata": {
+        "kind": "image",
+        "width": 1248,
+        "height": 1824
+       }
+      }
+     ]
+    }
+   },
+   "saved": "/mnt/data/sdxl/sampler_test/image_output/milfullchain_euler_normal_30s_cfg7_seed377020409264109_832x1216.png",
+   "nfe_max": 60,
+   "nfe_note": "30 base + hires + face + eye steps; detailer NFE conditional on bbox detection (max shown)",
+   "image_stats": {
+    "w": 1248,
+    "h": 1824,
+    "mean": 0.22664374224536118,
+    "std": 0.23597948887703243
+   }
+  },
+  {
+   "sampler": "milstein",
+   "prompt_id": "d1bf4957-ac10-44e3-b96f-d29337d8b15a",
+   "ok": true,
+   "wall_s": 125.0,
+   "vram_before": {
+    "used_mib": 2493,
+    "free_mib": 1330
+   },
+   "vram_after": {
+    "used_mib": 2525,
+    "free_mib": 1298
+   },
+   "history_echo": {
+    "error": "unexpected prompt type <class 'list'>"
+   },
+   "prompt_echo_seed": null,
+   "outputs": {
+    "13": {
+     "images": [
+      {
+       "filename": "milfullchain_milstein_normal_30s_cfg7_00001_.png",
+       "subfolder": "",
+       "type": "output",
+       "metadata": {
+        "kind": "image",
+        "width": 1248,
+        "height": 1824
+       }
+      }
+     ]
+    }
+   },
+   "saved": "/mnt/data/sdxl/sampler_test/image_output/milfullchain_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png",
+   "nfe_max": 60,
+   "nfe_note": "30 base + hires + face + eye steps; detailer NFE conditional on bbox detection (max shown)",
+   "image_stats": {
+    "w": 1248,
+    "h": 1824,
+    "mean": 0.26277356463840595,
+    "std": 0.27042569841742364
+   }
+  }
+ ],
+ "output_dir_clean": true,
+ "live_before": [
+  "_output_images_will_be_put_here",
+  "base_euler20_00001_.png",
+  "base_lumen_old20_00001_.png",
+  "base_lumen_polished20_00001_.png",
+  "beautified_euler20_00001_.png",
+  "beautified_euler_polished20_00001_.png",
+  "beautified_lumen20_00001_.png",
+  "beautified_lumen_polished20_00001_.png",
+  "lumen_clean_euler20_00001_.png",
+  "lumen_clean_lumen20_00001_.png",
+  "lumen_clean_orig30_00001_.png",
+  "sfw_euler20_00001_.png",
+  "sfw_lumen20_00001_.png",
+  "sfw_orig30_00001_.png",
+  "smoke_euler5_00001_.png"
+ ],
+ "live_after": [
+  "_output_images_will_be_put_here",
+  "base_euler20_00001_.png",
+  "base_lumen_old20_00001_.png",
+  "base_lumen_polished20_00001_.png",
+  "beautified_euler20_00001_.png",
+  "beautified_euler_polished20_00001_.png",
+  "beautified_lumen20_00001_.png",
+  "beautified_lumen_polished20_00001_.png",
+  "lumen_clean_euler20_00001_.png",
+  "lumen_clean_lumen20_00001_.png",
+  "lumen_clean_orig30_00001_.png",
+  "sfw_euler20_00001_.png",
+  "sfw_lumen20_00001_.png",
+  "sfw_orig30_00001_.png",
+  "smoke_euler5_00001_.png"
+ ],
+ "workflows_clean": true,
+ "workflows_before": [
+  "projx-v2.3-filled-prompts-pieModel.json"
+ ],
+ "workflows_after": [
+  "projx-v2.3-filled-prompts-pieModel.json"
+ ],
+ "status": "complete",
+ "finished_utc": "2026-10-07T19:25:54.053232+00:00"
+}
