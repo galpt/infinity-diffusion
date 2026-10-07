@@ -60,6 +60,26 @@ def sample_milstein(
 
 The core lives in `milstein_diffusion.py` with the `sample_milstein` sampler, the `milstein_step` helper, the bounded `milstein_scale` field with its finite-difference derivative, and small helpers for sigmas and steps. The ComfyUI adapter lives in `milstein_comfyui` and the node entry lives in `custom_node`. The install helper is `comfy-milstein.sh` with node dir `milstein-diffusion`. Unit tests live under tests-unit and cover registration plus solver behavior on synthetic probes including a geometric-Brownian-motion strong-order check, additive collapse at `alpha = 0`, and fail-closed guards.
 
+## Benchmark
+
+Frozen protocol: `waiMatureIllustrious_v30.safetensors` at 832x1216, 30 steps, CFG 7.0, seed 377020409264109, Normal scheduler. Prompts are the main-branch README Benchmark fences byte-verbatim (SFW portrait). Base runs are hires/detailers OFF (30 NFE); fullchain runs add hires (10 steps, CFG 6.0, denoise 0.32, 1.5x) plus face/eye detailers (10 steps each, CFG 6.0). Run manifests live in `assets/milbench_manifest.json` and `assets/milfullchain_manifest.json`.
+
+Base-only (832x1216):
+
+| Sampler | Render | Wall | Mean | Std |
+|---|---|---|---|---|
+| euler | ![euler base](assets/milbench_euler_normal_30s_cfg7_seed377020409264109_832x1216.png) | 45.0 s | 0.2270 | 0.2409 |
+| milstein | ![milstein base](assets/milbench_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png) | 40.0 s | 0.2652 | 0.2774 |
+
+Fullchain (1248x1824 output from 832x1216 base):
+
+| Sampler | Render | Wall | Output |
+|---|---|---|---|
+| euler | ![euler fullchain](assets/milfullchain_euler_normal_30s_cfg7_seed377020409264109_832x1216.png) | 130.0 s | 1248x1824 |
+| milstein | ![milstein fullchain](assets/milfullchain_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png) | 125.0 s | 1248x1824 |
+
+Note: single seed and single portrait, so this is a rendering check rather than a quality claim; no LPIPS or multi-seed statistics are computed. Fullchain VRAM is marginal on 4 GB (about 2.5 GB used after render, roughly 1.3 GB free).
+
 ## License
 
 MIT License. The text resides in `LICENSE`.
