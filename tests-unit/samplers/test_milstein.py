@@ -378,8 +378,8 @@ def test_alpha_nonzero_differs_but_bounded():
     assert bool(torch.allclose(fd, analytic, atol=2e-3))
 
 
-def test_gbm_strong_order():
-    """Milstein beats Euler-Maruyama on a GBM toy (strong order)."""
+def test_gbm_single_step_mse_sanity():
+    """GBM single-step MSE sanity check on a toy."""
     torch.manual_seed(7)
     mu = 0.1
     beta = 0.3

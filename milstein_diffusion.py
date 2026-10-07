@@ -1,13 +1,14 @@
 """Milstein (diagonal) sampler for the reverse SDE, sampler only.
 
 ComfyUI Euler (``sample_euler``) integrates the probability-flow ODE with a
-deterministic step. Anderson's theorem states the reverse diffusion can also
-be written as an SDE with the same marginals, which adds controlled noise
+deterministic step. In the Anderson reverse-time view, the reverse diffusion
+can also be written as an SDE sharing the marginals of the forward process
+under standard regularity conditions, which adds controlled noise
 reinjection on top of the ODE drift. This module extends the ancestral
 Euler-Maruyama SDE form with a diagonal Milstein correction, sampler only
 with no scheduler.
 
-Scalar reference (blog formula, Heston/CIR case)::
+Scalar reference (Heston/CIR case)::
 
     X_{n+1} = X_n + mu_n*dt + sigma_n*dW_n + 0.5*sigma_n*sigma_n'*((dW_n)^2 - dt)
 
@@ -16,7 +17,7 @@ CIR specialization::
     v_{n+1} = v_n + kappa*(theta - v_n)*dt + xi*sqrt(v_n)*dW_n
         + 0.25*xi^2*((dW_n)^2 - dt)
 
-Mapping used here:
+Mapping used here.
 
 * Drift is the Karras ODE derivative ``d = (x - D) / sigma`` stepped to
   ``sigma_down`` exactly as in the ancestral Euler-Maruyama sampler. The
@@ -35,14 +36,14 @@ Mapping used here:
   derivative ``m_prime = dm/dx`` is evaluated by central finite difference
   on the scalar field, which costs zero extra model evaluations and uses
   no autograd.
-* Diagonal noise only: each element is treated as an independent scalar
+* Diagonal noise only. Each element is treated as an independent scalar
   SDE. Cross terms and Levy areas for non-commutative noise are omitted
   by design (documented truncation for high-dimensional latents).
 
-Rectified-flow schedules are deferred: the RF twin raises instead of
+Rectified-flow schedules are deferred. The RF twin raises instead of
 sampling, and the main entry point fails closed for CONST models.
 
-Sampler only: scheduling stays with the built-in choices, this module only
+Sampler only. Scheduling stays with the built-in choices, this module only
 steps through the given sigmas. Comfy helpers ``to_d``,
 ``get_ancestral_step``, and ``default_noise_sampler`` are reused by import
 when ComfyUI is present. The small local fallbacks below are only for
@@ -73,7 +74,7 @@ __all__ = [
 __version__ = "1.0.0"
 
 
-# Terminal tolerance matches the Euler-M choice: strict enough to keep
+# Terminal tolerance matches the Euler-M choice. Strict enough to keep
 # ancestral algebra exact while tolerating float slicing noise.
 MILSTEIN_TERMINAL_ATOL = 1e-10
 
@@ -284,7 +285,7 @@ def milstein_scale(
 
     ``m(x) = clip(1 + alpha * tanh(x / k), 1 - alpha, 1 + alpha)``
     evaluated elementwise. The field depends on the state ``x`` at the
-    current noise level, hence the ``b(x, sigma)`` reading: ``x`` carries
+    current noise level, hence the ``b(x, sigma)`` reading. ``x`` carries
     the state and the call site carries the ``sigma`` context. With
     ``alpha = 0`` the result is exactly one.
     """
@@ -309,7 +310,7 @@ def milstein_scale_derivative(
 ) -> torch.Tensor:
     """Return ``dm/dx`` by central finite difference on the scalar field.
 
-    No autograd and no model evaluations are used; the scalar ``m`` field
+    No autograd and no model evaluations are used. The scalar ``m`` field
     is probed at ``x +/- eps`` elementwise.
     """
     a = _validate_alpha(alpha)
@@ -340,7 +341,7 @@ def milstein_correction(
     """Return the elementwise Milstein correction ``0.5*b*b'*((dW)^2 - dt)``.
 
     ``dt_var`` is the per-element variance of ``dW`` so the term is
-    zero-mean for standard normal draws. Diagonal noise only; cross terms
+    zero-mean for standard normal draws. Diagonal noise only. Cross terms
     are omitted.
     """
     if not isinstance(b, torch.Tensor) or not isinstance(b_prime, torch.Tensor):
@@ -386,7 +387,7 @@ def milstein_step(
     sigma_down, sigma_up = _get_ancestral_step(sigma, sigma_next, eta=eta_val)
     d = _to_d(x, sigma, denoised)
     dt = sigma_down - sigma
-    # Fast path: additive noise collapses bit-identically to Euler-Maruyama
+    # Fast path. Additive noise collapses bit-identically to Euler-Maruyama
     # by running the exact same flops with no modulation or correction.
     if a == 0.0:
         x_next = x + d * dt
