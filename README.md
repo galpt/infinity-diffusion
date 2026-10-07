@@ -62,23 +62,36 @@ The core lives in `milstein_diffusion.py` with the `sample_milstein` sampler, th
 
 ## Benchmark
 
-Frozen protocol uses `waiMatureIllustrious_v30.safetensors` at 832x1216, 30 steps, CFG 7.0, seed 377020409264109, Normal scheduler. Prompts are the main-branch README Benchmark fences byte-verbatim (SFW portrait). Base runs are hires/detailers OFF (30 NFE). Fullchain runs add hires (10 steps, CFG 6.0, denoise 0.32, 1.5x) plus face/eye detailers (10 steps each, CFG 6.0). Run manifests live in `assets/milbench_manifest.json` and `assets/milfullchain_manifest.json`.
+Both samplers at 832x1216, 30 steps, CFG 7.0, seed 377020409264109, Normal scheduler, same model (waiMatureIllustrious_v30.safetensors). Fullchain output is 1248x1824 via hires (10 steps, CFG 6.0, denoise 0.32, 1.5x) plus face (denoise 0.25, guide 512, face_yolov8m.pt) / eye (denoise 0.35, guide 384, eye_yolov8m.pt) detailers (10 steps each, CFG 6.0). Run manifest lives in `assets/milfullchain_manifest.json`.
 
-Base-only (832x1216):
+Positive prompt:
 
-| Sampler | Render | Wall | Mean | Std |
-|---|---|---|---|---|
-| euler | ![euler base](assets/milbench_euler_normal_30s_cfg7_seed377020409264109_832x1216.png) | 45.0 s | 0.2270 | 0.2409 |
-| milstein | ![milstein base](assets/milbench_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png) | 40.0 s | 0.2652 | 0.2774 |
+```
+close up, front view, upper body shot, professional shot, Vogue magazine style, soft studio lighting, (cinematic depth of field:1.2), studio quality, digitally enhanced, high contrast, crisp sharp black outlines, clean sharp lineart, intricate lace trim, thin geometric filigree patterns, intimate, detailed, steady gaze, rendered in sepia tones, evoking rembrandt, timeless, expressive, highly detailed, sharp focus, high resolution, masterpiece, high score, great score, absurdres, smooth film grain, cinematic light particles.
 
-Fullchain (1248x1824 output from 832x1216 base):
+1girl, solo, anime girl, Advent goddess, black hair, dark red eyes, hime cut, long hair, detailed eyes, mature female, sexy fox eyes, pale skin, pink lips, beautiful feminine face.
 
-| Sampler | Render | Wall | Output |
-|---|---|---|---|
-| euler | ![euler fullchain](assets/milfullchain_euler_normal_30s_cfg7_seed377020409264109_832x1216.png) | 130.0 s | 1248x1824 |
-| milstein | ![milstein fullchain](assets/milfullchain_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png) | 125.0 s | 1248x1824 |
+masterpiece, best quality, 1girl, solo, anime girl, detailed face, detailed eyes, intricate hair, sharp black outlines, clean lineart, high contrast, mechanical armor, lace trim, flowing cape, jewelry, crown, detailed fingers, sharp focus, high resolution, digital painting, vibrant colors, cinematic lighting, elegant, majestic, fantasy
 
-Note. Single seed and single portrait, so this is a rendering check rather than a quality claim. No LPIPS or multi-seed statistics are computed. Fullchain VRAM is marginal on 4 GB (about 2.5 GB used after render, roughly 1.3 GB free).
+she has a curvy and plump body.
+```
+
+Negative prompt:
+
+```
+lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low quality, low score, bad score, average score, signature, watermark, username, shiny skin, greasy skin, oily skin, shiny hair, greasy hair, oily hair, extra fingers, extra fingernails, multiple views, mole, bubbles, frame, jagged edges, aliased
+```
+
+<table>
+<tr>
+  <td align="center"><b>euler</b></td>
+  <td align="center"><b>milstein</b></td>
+</tr>
+<tr>
+  <td><img src="assets/milfullchain_euler_normal_30s_cfg7_seed377020409264109_832x1216.png" width="360" alt="euler fullchain"></td>
+  <td><img src="assets/milfullchain_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png" width="360" alt="milstein fullchain"></td>
+</tr>
+</table>
 
 ## License
 
