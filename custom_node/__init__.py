@@ -1,4 +1,4 @@
-"""ComfyUI custom node for Euler-M, sampler only."""
+"""ComfyUI custom node for Milstein, sampler only."""
 
 import os
 import sys
@@ -19,11 +19,11 @@ except Exception:
     _has_comfy = False
 
 try:
-    from euler_m_diffusion import sample_euler_m as _sampler_fn
+    from milstein_diffusion import sample_milstein as _sampler_fn
 except Exception:
     _sampler_fn = None
 
-_NAME = "euler_m"
+_NAME = "milstein"
 
 
 def _register(name, fn):
@@ -48,10 +48,10 @@ _registered = _register(_NAME, _sampler_fn)
 
 if _registered:
     # Short note, kept plain for the console.
-    print("# Registered euler_m sampler")
+    print("# Registered milstein sampler")
 elif not _has_comfy:
     # Plain note, ComfyUI is simply absent here.
-    print("# euler_m sampler skipped, ComfyUI was not found")
+    print("# milstein sampler skipped, ComfyUI was not found")
 
 # No custom nodes, sampler is registered through side effects above.
 NODE_CLASS_MAPPINGS = {}
