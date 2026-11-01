@@ -2,7 +2,7 @@
  "matrix": {
   "samplers": [
    "euler",
-   "milstein"
+   "milstein_relu"
   ],
   "scheduler": "normal",
   "base_steps": 30,
@@ -54,14 +54,14 @@
    "bbox_threshold": 0.5,
    "bbox_dilation": 10,
    "bbox_crop_factor": 3,
-   "drop_size": 10,
+   "drop_size": 9,
    "cycle": 1,
-   "detector": "bbox/eye_yolov8m.pt",
-   "note": "all other FaceDetailer params = pieModel workflow verbatim"
+   "detector": "bbox/eye_yolov8s.pt",
+   "note": "all other FaceDetailer params = pieModel workflow verbatim; DEVIATION (milstein_relu re-render): executed API prompt used bbox/eye_yolov8s.pt + drop_size 9 (UltralyticsDetectorProvider node 37 / FaceDetailer node 38); README Benchmark fence cites eye_yolov8m.pt but that file is absent from ComfyUI models/ultralytics/bbox (only eye_yolov8s.pt present alongside face_yolov8m.pt / face_yolov9c.pt); README left unchanged, this manifest is authoritative for the re-render; euler entry below retains its Oct-07 historical record verbatim"
   },
-  "workflow": "projx-v2.3-filled-prompts-pieModel.json node types (CheckpointLoaderSimple + 2x CLIPTextEncode + EmptyLatentImage + KSampler base + LatentUpscaleBy + KSampler hires + VAEDecode + 2x UltralyticsDetectorProvider + 2x FaceDetailer + SaveImage); rgthree Power Prompt / SDXL-Empty-Latent(rgthree) / PreviewImage mapped to API equivalents (CLIPTextEncode / EmptyLatentImage 832x1216 / SaveImage) for byte-exact prompts/size/persistence; no sampler changes",
-  "workflow_file": "projx-v2.3-filled-prompts-pieModel.json",
-  "workflow_file_sha256": "267a3befeb099798a32612fb678c4f1689a9ac7af6731a1a7281575e13446454",
+  "workflow": "projx-v2.4-filled-prompts.json node types (CheckpointLoaderSimple + 2x CLIPTextEncode + EmptyLatentImage + KSampler base + LatentUpscaleBy + KSampler hires + VAEDecode + 2x UltralyticsDetectorProvider + 2x FaceDetailer + SaveImage); rgthree Power Prompt / SDXL-Empty-Latent(rgthree) / PreviewImage mapped to API equivalents (CLIPTextEncode / EmptyLatentImage 832x1216 / SaveImage) for byte-exact prompts/size/persistence; milstein_relu sampler override applied at every KSampler/FaceDetailer stage for the re-render (KSampler _NAME)",
+  "workflow_file": "projx-v2.4-filled-prompts.json",
+  "workflow_file_sha256": "0afc375a7c4e0935bbac59a7a90dbd09b04a983b5d2ca78356212ad3e87b327b",
   "workflow_original": {
    "checkpoint": "pieModels_nutella.safetensors",
    "preset": "1216 x 832   (landscape)",
@@ -90,7 +90,7 @@
    "face_detector": "bbox/face_yolov8m.pt",
    "eye_detector": "bbox/eye_yolov8m.pt"
   },
-  "workflow_note": "pieModel Eye Note text claims denoise 0.35/steps 15/guide 384 but widgets_values_named actually 10 steps cfg 6.0 (same as Face except guide 384/feather 3/denoise 0.35); used ACTUAL widget values (10/6.0), not Note text; hires 10/6.0/0.32 per widgets; base overridden 30/7.0 per frozen spec",
+  "workflow_note": "pieModel Eye Note text claims denoise 0.35/steps 15/guide 384 but widgets_values_named actually 10 steps cfg 6.0 (same as Face except guide 384/feather 3/denoise 0.35); used ACTUAL widget values (10/6.0), not Note text; hires 10/6.0/0.32 per widgets; base overridden 30/7.0 per frozen spec; RE-RENDER PROVENANCE: workflow_file above is the UI-format graph source (widget defaults: seed 603901484264784, base steps 15, sampler 'milstein', face detector face_yolov9c.pt); the executed API prompt overrode seed=377020409264109, base 30/7.0, sampler_name=milstein_relu at all 4 sampling stages, face detector=bbox/face_yolov8m.pt, eye detector=bbox/eye_yolov8s.pt per this frozen spec (executed_api_prompt_sha256 ede347b05505e948315e2755c7b5ae6b0f1074f69567a8a33ed188b92b82bb80 canonical JSON of sent prompt; PNG-embedded copy differs only by ComfyUI float normalization 384->384.0 etc.)",
   "prompts": "MAIN-BRANCH origin/main README Benchmark fences byte-verbatim (SFW)",
   "positive_sha256": "0c10744615fe6edcc06fcabe48db84eb91455fed93d56c465e9e552009ce0f7c",
   "negative_sha256": "969ca3f7f0bc06b495c6a0efa4a1f67262264c8f028be8580d897efe71db5895",
@@ -98,7 +98,8 @@
   "mode": "fullchain (hires/detailers ON)",
   "nfe_max_per_render": 60,
   "nfe_note": "1 NFE per step per sampling stage; detailer NFE conditional on bbox detection (max shown); scheduler sigmas derived server-side by ComfyUI normal scheduler for SDXL",
-  "scheduler_note": "sigmas derived server-side by ComfyUI normal scheduler for SDXL; not re-synthesized here"
+  "scheduler_note": "sigmas derived server-side by ComfyUI normal scheduler for SDXL; not re-synthesized here",
+  "executed_api_prompt_sha256": "ede347b05505e948315e2755c7b5ae6b0f1074f69567a8a33ed188b92b82bb80"
  },
  "started_utc": "2026-10-07T19:21:36.840001+00:00",
  "renders": [
@@ -146,22 +147,17 @@
    }
   },
   {
-   "sampler": "milstein",
-   "prompt_id": "d1bf4957-ac10-44e3-b96f-d29337d8b15a",
+   "sampler": "milstein_relu",
+   "prompt_id": "0e8703ac-3149-4774-bd51-2d631d23e771",
    "ok": true,
-   "wall_s": 125.0,
-   "vram_before": {
-    "used_mib": 2493,
-    "free_mib": 1330
-   },
-   "vram_after": {
-    "used_mib": 2525,
-    "free_mib": 1298
-   },
+   "wall_s": 132.299,
+   "vram_before": null,
+   "vram_after": null,
    "history_echo": {
-    "error": "unexpected prompt type <class 'list'>"
+    "status_str": "success",
+    "completed": true
    },
-   "prompt_echo_seed": null,
+   "prompt_echo_seed": 377020409264109,
    "outputs": {
     "13": {
      "images": [
@@ -178,15 +174,20 @@
      ]
     }
    },
-   "saved": "/mnt/data/sdxl/sampler_test/image_output/milfullchain_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png",
+   "saved": "assets/milfullchain_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png",
    "nfe_max": 60,
    "nfe_note": "30 base + hires + face + eye steps; detailer NFE conditional on bbox detection (max shown)",
    "image_stats": {
     "w": 1248,
     "h": 1824,
-    "mean": 0.26277356463840595,
-    "std": 0.27042569841742364
-   }
+    "mean": 0.2605591076211562,
+    "std": 0.2719409736340584
+   },
+   "wall_note": "execution_success.timestamp - execution_start.timestamp from ComfyUI /history (132299 ms)",
+   "vram_note": "not recorded for the re-render (Oct-07 VRAM figures were for the superseded milstein run)",
+   "filename_alias_note": "asset filename retains legacy infix 'milstein' (links/img tags preserved); sampler is 'milstein_relu' (ComfyUI KSampler _NAME)",
+   "sha256": "cad332b305e4b28bed600f3e33f1542a9772eb1f254cea370ca82e6e6f5809aa",
+   "file_size": 2750968
   }
  ],
  "output_dir_clean": true,
@@ -232,5 +233,5 @@
   "projx-v2.3-filled-prompts-pieModel.json"
  ],
  "status": "complete",
- "finished_utc": "2026-10-07T19:25:54.053232+00:00"
+ "finished_utc": "2026-11-01T19:10:49.057352+00:00"
 }
