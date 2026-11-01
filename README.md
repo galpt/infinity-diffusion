@@ -1,40 +1,40 @@
-# Milstein
+# Milstein-ReLU
 
 ## Overview
 
-Milstein is a sampler-only diagonal Milstein SDE. It extends the ancestral Euler-Maruyama SDE with a bounded state-dependent diffusion multiplier and an elementwise Milstein correction.
+Milstein-ReLU is a sampler-only rectified diagonal Milstein SDE. It extends the ancestral Euler-Maruyama SDE with a bounded state-dependent diffusion multiplier and a rectified elementwise Milstein correction `relu(0.5*m*m'*(dW^2 - dt_var))`.
 
 ## Installation
 
-Installation uses a shallow branch checkout followed by the installer script. The branch source is `sampler/milstein-diagonal` and the helper is `comfy-milstein.sh`.
+Installation uses a shallow branch checkout followed by the installer script. The branch source is `sampler/milstein-relu` and the helper is `comfy-milstein-relu.sh`.
 
 ```bash
 # 1. Clone this specific branch
-git clone --depth 1 -b sampler/milstein-diagonal https://github.com/galpt/infinity-diffusion.git
+git clone --depth 1 -b sampler/milstein-relu https://github.com/galpt/infinity-diffusion.git
 
 # 2. Go inside the cloned directory
 cd infinity-diffusion
 
 # 3. Run the script to install it to your ComfyUI directory
-bash comfy-milstein.sh /path/to/ComfyUI install
+bash comfy-milstein-relu.sh /path/to/ComfyUI install
 ```
 
  Removal uses the matching uninstall invocation.
 
 ```bash
-bash comfy-milstein.sh /path/to/ComfyUI uninstall
+bash comfy-milstein-relu.sh /path/to/ComfyUI uninstall
 ```
 
 ## Usage
 
-Activation follows a ComfyUI restart, after which KSampler lists `milstein` alongside the built-in schedulers. Scheduling remains with the built-in choices.
+Activation follows a ComfyUI restart, after which KSampler lists `milstein_relu` alongside the built-in schedulers. Scheduling remains with the built-in choices.
 
 ## Signatures
 
 The sampler exposes one evaluation per step with two SDE controls plus two diffusion controls.
 
 ```python
-def sample_milstein(
+def sample_milstein_relu(
     model,
     x: torch.Tensor,
     sigmas: torch.Tensor,
@@ -54,8 +54,8 @@ def sample_milstein(
 - `noise_sampler` defaults to the Comfy seeded sampler honoring `extra_args["seed"]`.
 - `alpha` sets the bounded modulation amplitude in `[0, 1)` and `k` sets the saturation scale.
 - `alpha = 0` reproduces the Euler-Maruyama trajectory bit-identically.
-- `sample_milstein_RF` shares the same signature for rectified-flow schedules but is deferred and always raises.
-- `sample_milstein` dispatches to it for CONST models and therefore fails closed there.
+- `sample_milstein_relu_RF` shares the same signature for rectified-flow schedules but is deferred and always raises.
+- `sample_milstein_relu` dispatches to it for CONST models and therefore fails closed there.
 - With `eta = 0` the SDE run matches the Euler baseline within tolerance.
 
 ## Benchmark
@@ -85,11 +85,11 @@ lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low 
 <table>
 <tr>
   <td align="center"><b>euler</b></td>
-  <td align="center"><b>milstein</b></td>
+  <td align="center"><b>milstein_relu</b></td>
 </tr>
 <tr>
   <td><img src="assets/milfullchain_euler_normal_30s_cfg7_seed377020409264109_832x1216.png" width="360" alt="euler fullchain"></td>
-  <td><img src="assets/milfullchain_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png" width="360" alt="milstein fullchain"></td>
+  <td><img src="assets/milfullchain_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png" width="360" alt="milstein_relu fullchain"></td>
 </tr>
 </table>
 

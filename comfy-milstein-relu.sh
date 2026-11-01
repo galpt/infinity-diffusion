@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install helper for milstein in ComfyUI.
+# Install helper for milstein_relu in ComfyUI.
 # It copies the sampler and the small adapter into place.
 # The ComfyUI path is required and must hold a custom nodes dir.
 
@@ -25,37 +25,40 @@ if [[ ! -d "$COMFYUI_DIR/custom_nodes" ]]; then
     exit 1
 fi
 
-NODE_DIR="$COMFYUI_DIR/custom_nodes/milstein-diffusion"
+NODE_DIR="$COMFYUI_DIR/custom_nodes/milstein-relu-diffusion"
 
 if [[ "$MODE" == "install" ]]; then
     if [[ -d "$NODE_DIR" ]]; then
-        echo "milstein is already installed, updating files"
+        echo "milstein_relu is already installed, updating files"
     fi
 
-    mkdir -p "$NODE_DIR/milstein_comfyui"
+    mkdir -p -- "$NODE_DIR/milstein_relu_comfyui"
 
     # Copy core module and adapter.
-    cp "$SCRIPT_DIR/milstein_diffusion.py" "$NODE_DIR/"
-    cp "$SCRIPT_DIR/milstein_comfyui/__init__.py" "$NODE_DIR/milstein_comfyui/"
-    cp "$SCRIPT_DIR/milstein_comfyui/integration.py" "$NODE_DIR/milstein_comfyui/"
+    cp -- "$SCRIPT_DIR/milstein_relu_diffusion.py" "$NODE_DIR/"
+    cp -- "$SCRIPT_DIR/milstein_relu_comfyui/__init__.py" "$NODE_DIR/milstein_relu_comfyui/"
+    cp -- "$SCRIPT_DIR/milstein_relu_comfyui/integration.py" "$NODE_DIR/milstein_relu_comfyui/"
 
     # Copy registration entry point.
-    cp "$SCRIPT_DIR/custom_node/__init__.py" "$NODE_DIR/__init__.py"
+    cp -- "$SCRIPT_DIR/custom_node/__init__.py" "$NODE_DIR/__init__.py"
 
     # Clear stale bytecode so a restart never loads an old version.
-    find "$NODE_DIR" -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
+    # Scoped to NODE_DIR only (milstein-relu-diffusion); the broad
+    # milstein_*.pyc pattern is safe here and also drops stale
+    # pre-rename milstein_*.pyc files from earlier installs.
+    find "$NODE_DIR" -type d -name "__pycache__" -prune -exec rm -rf -- {} + 2>/dev/null || true
     find "$NODE_DIR" -type f -name "milstein_*.pyc" -delete 2>/dev/null || true
 
-    echo "Installed milstein to $NODE_DIR"
-    echo "Restart ComfyUI and pick milstein from the sampler list"
+    echo "Installed milstein_relu to $NODE_DIR"
+    echo "Restart ComfyUI and pick milstein_relu from the sampler list"
 
 elif [[ "$MODE" == "uninstall" ]]; then
     if [[ -d "$NODE_DIR" ]]; then
-        rm -rf "$NODE_DIR"
-        echo "Removed milstein custom node"
+        rm -rf -- "$NODE_DIR"
+        echo "Removed milstein_relu custom node"
         echo "Restart ComfyUI to complete uninstall"
     else
-        echo "milstein is not installed"
+        echo "milstein_relu is not installed"
         exit 0
     fi
 

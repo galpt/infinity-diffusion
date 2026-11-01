@@ -1,21 +1,21 @@
-"""Milstein (diagonal) sampler for the reverse SDE, sampler only.
+"""Milstein-ReLU (rectified diagonal) sampler for the reverse SDE, sampler only.
 
 ComfyUI Euler (``sample_euler``) integrates the probability-flow ODE with a
 deterministic step. In the Anderson reverse-time view, the reverse diffusion
 can also be written as an SDE sharing the marginals of the forward process
 under standard regularity conditions, which adds controlled noise
 reinjection on top of the ODE drift. This module extends the ancestral
-Euler-Maruyama SDE form with a diagonal Milstein correction, sampler only
-with no scheduler.
+Euler-Maruyama SDE form with a rectified diagonal Milstein correction,
+sampler only with no scheduler.
 
 Scalar reference (Heston/CIR case)::
 
-    X_{n+1} = X_n + mu_n*dt + sigma_n*dW_n + 0.5*sigma_n*sigma_n'*((dW_n)^2 - dt)
+    X_{n+1} = X_n + mu_n*dt + sigma_n*dW_n + relu(0.5*sigma_n*sigma_n'*((dW_n)^2 - dt))
 
 CIR specialization::
 
     v_{n+1} = v_n + kappa*(theta - v_n)*dt + xi*sqrt(v_n)*dW_n
-        + 0.25*xi^2*((dW_n)^2 - dt)
+        + relu(0.25*xi^2*((dW_n)^2 - dt))
 
 Mapping used here.
 
@@ -30,13 +30,14 @@ Mapping used here.
   ``m * dW`` where ``dW = noise * s_noise * sigma_up``. With ``alpha = 0``
   the multiplier is exactly one and the update collapses bit-identically
   to the ancestral Euler-Maruyama step.
-* Milstein correction is elementwise
-  ``0.5 * m * m_prime * (dW^2 - dt_var)`` with
-  ``dt_var = (s_noise * sigma_up)^2`` so the term is zero-mean. The
+* Rectified Milstein correction is elementwise
+  ``relu(0.5 * m * m_prime * (dW^2 - dt_var))`` with
+  ``dt_var = (s_noise * sigma_up)^2``. The raw term is zero-mean; ReLU
+  keeps only the nonnegative part. The
   derivative ``m_prime = dm/dx`` is evaluated by central finite difference
   on the scalar field, which costs zero extra model evaluations and uses
   no autograd.
-* Diagonal noise only. Each element is treated as an independent scalar
+* Diagonal noise only, rectified. Each element is treated as an independent scalar
   SDE. Cross terms and Levy areas for non-commutative noise are omitted
   by design (documented truncation for high-dimensional latents).
 
@@ -53,38 +54,41 @@ math, not copied.
 
 from __future__ import annotations
 
+import math
+
 import torch
+import torch.nn.functional as F
 
 
 __all__ = [
-    "MILSTEIN_TERMINAL_ATOL",
-    "MILSTEIN_DEFAULT_ALPHA",
-    "MILSTEIN_DEFAULT_K",
-    "MILSTEIN_FD_EPS",
+    "MILSTEIN_RELU_TERMINAL_ATOL",
+    "MILSTEIN_RELU_DEFAULT_ALPHA",
+    "MILSTEIN_RELU_DEFAULT_K",
+    "MILSTEIN_RELU_FD_EPS",
     "count_nfe",
     "validate_sigmas",
     "is_terminal_sigma",
-    "milstein_scale",
-    "milstein_scale_derivative",
-    "milstein_correction",
-    "milstein_step",
-    "sample_milstein",
-    "sample_milstein_RF",
+    "milstein_relu_scale",
+    "milstein_relu_scale_derivative",
+    "milstein_relu_correction",
+    "milstein_relu_step",
+    "sample_milstein_relu",
+    "sample_milstein_relu_RF",
 ]
 __version__ = "1.0.0"
 
 
 # Terminal tolerance matches the Euler-M choice. Strict enough to keep
 # ancestral algebra exact while tolerating float slicing noise.
-MILSTEIN_TERMINAL_ATOL = 1e-10
+MILSTEIN_RELU_TERMINAL_ATOL = 1e-10
 
 # Default diffusion modulation. Small so the sampler stays close to the
 # ancestral Euler-Maruyama baseline while adding a bounded state dependence.
-MILSTEIN_DEFAULT_ALPHA = 0.15
-MILSTEIN_DEFAULT_K = 1.0
+MILSTEIN_RELU_DEFAULT_ALPHA = 0.15
+MILSTEIN_RELU_DEFAULT_K = 1.0
 
 # Central-difference step for dm/dx on the scalar field.
-MILSTEIN_FD_EPS = 1e-3
+MILSTEIN_RELU_FD_EPS = 1e-3
 
 
 try:  # Reuse ComfyUI originals by import.
@@ -167,7 +171,7 @@ def _is_const_rf_model(model) -> bool:
 def count_nfe(steps: int) -> int:
     """Return the number of model evaluations for the given step count.
 
-    Milstein uses one evaluation per step, so the count equals steps.
+    Milstein-ReLU uses one evaluation per step, so the count equals steps.
     """
     steps = int(steps)
     if steps < 1:
@@ -186,7 +190,9 @@ def is_terminal_sigma(sigma) -> bool:
         return False
     if val != val:  # NaN is never terminal.
         return False
-    return abs(val) <= float(MILSTEIN_TERMINAL_ATOL)
+    if val < 0.0:  # Negative sigmas are non-physical, never terminal.
+        return False
+    return val <= float(MILSTEIN_RELU_TERMINAL_ATOL)
 
 
 def validate_sigmas(sigmas: torch.Tensor, steps: int | None = None) -> int:
@@ -221,7 +227,13 @@ def validate_sigmas(sigmas: torch.Tensor, steps: int | None = None) -> int:
 
 
 def _check_finite(tensor: torch.Tensor, name: str) -> None:
-    """Raise when the named tensor holds non finite entries."""
+    """Raise when the named tensor holds non finite entries.
+
+    Note: each call performs a host sync via ``.item()``. This cost is
+    intentional and inherited from the diagonal sampler: fail-closed
+    guards must observe every intermediate so NaN/Inf can never silently
+    propagate. The per-step ReLU itself is negligible next to this.
+    """
     if not isinstance(tensor, torch.Tensor):
         raise ValueError("expected a torch tensor")
     if not bool(torch.isfinite(tensor).all().item()):
@@ -276,10 +288,10 @@ def _validate_k(k) -> float:
     return float(val)
 
 
-def milstein_scale(
+def milstein_relu_scale(
     x: torch.Tensor,
-    alpha: float = MILSTEIN_DEFAULT_ALPHA,
-    k: float = MILSTEIN_DEFAULT_K,
+    alpha: float = MILSTEIN_RELU_DEFAULT_ALPHA,
+    k: float = MILSTEIN_RELU_DEFAULT_K,
 ) -> torch.Tensor:
     """Return the bounded state-dependent diffusion multiplier.
 
@@ -302,11 +314,11 @@ def milstein_scale(
     return out
 
 
-def milstein_scale_derivative(
+def milstein_relu_scale_derivative(
     x: torch.Tensor,
-    alpha: float = MILSTEIN_DEFAULT_ALPHA,
-    k: float = MILSTEIN_DEFAULT_K,
-    eps: float = MILSTEIN_FD_EPS,
+    alpha: float = MILSTEIN_RELU_DEFAULT_ALPHA,
+    k: float = MILSTEIN_RELU_DEFAULT_K,
+    eps: float = MILSTEIN_RELU_FD_EPS,
 ) -> torch.Tensor:
     """Return ``dm/dx`` by central finite difference on the scalar field.
 
@@ -326,23 +338,23 @@ def milstein_scale_derivative(
     if a == 0.0:
         return torch.zeros_like(x)
     xf = x.to(torch.float32)
-    up = milstein_scale((xf + h).to(dtype=x.dtype), alpha=a, k=scale).to(torch.float32)
-    down = milstein_scale((xf - h).to(dtype=x.dtype), alpha=a, k=scale).to(torch.float32)
+    up = milstein_relu_scale((xf + h).to(dtype=x.dtype), alpha=a, k=scale).to(torch.float32)
+    down = milstein_relu_scale((xf - h).to(dtype=x.dtype), alpha=a, k=scale).to(torch.float32)
     deriv = (up - down) / float(2.0 * h)
     return deriv.to(dtype=x.dtype)
 
 
-def milstein_correction(
+def milstein_relu_correction(
     b: torch.Tensor,
     b_prime: torch.Tensor,
     dW: torch.Tensor,
     dt_var: float,
 ) -> torch.Tensor:
-    """Return the elementwise Milstein correction ``0.5*b*b'*((dW)^2 - dt)``.
+    """Return the rectified elementwise Milstein correction ``relu(0.5*b*b'*((dW)^2 - dt))``.
 
-    ``dt_var`` is the per-element variance of ``dW`` so the term is
-    zero-mean for standard normal draws. Diagonal noise only. Cross terms
-    are omitted.
+    ``dt_var`` is the per-element variance of ``dW`` so the raw term is
+    zero-mean for standard normal draws; ReLU keeps only the nonnegative
+    part. Diagonal noise only. Cross terms are omitted.
     """
     if not isinstance(b, torch.Tensor) or not isinstance(b_prime, torch.Tensor):
         raise ValueError("b and b_prime must be torch tensors")
@@ -352,12 +364,13 @@ def milstein_correction(
         dt = float(dt_var)
     except Exception:
         raise ValueError("dt_var must be a float")
-    if not dt >= 0.0 or not dt == dt:
+    if not math.isfinite(dt) or not dt >= 0.0:
         raise ValueError("dt_var must be a nonnegative finite float")
-    return 0.5 * b.to(dtype=dW.dtype) * b_prime.to(dtype=dW.dtype) * (dW * dW - dt)
+    corr = 0.5 * b.to(dtype=dW.dtype) * b_prime.to(dtype=dW.dtype) * (dW * dW - dt)
+    return F.relu(corr)
 
 
-def milstein_step(
+def milstein_relu_step(
     x: torch.Tensor,
     sigma,
     sigma_next,
@@ -365,15 +378,16 @@ def milstein_step(
     noise: torch.Tensor | None = None,
     eta: float = 1.0,
     s_noise: float = 1.0,
-    alpha: float = MILSTEIN_DEFAULT_ALPHA,
-    k: float = MILSTEIN_DEFAULT_K,
+    alpha: float = MILSTEIN_RELU_DEFAULT_ALPHA,
+    k: float = MILSTEIN_RELU_DEFAULT_K,
 ) -> torch.Tensor:
-    """Return one diagonal Milstein step.
+    """Return one rectified diagonal Milstein-ReLU step.
 
     The drift follows the ancestral Euler-Maruyama update to
     ``sigma_down``. The noise increment ``dW = noise * s_noise * sigma_up``
     is scaled by the bounded multiplier ``m(x)`` and corrected with the
-    elementwise Milstein term. With ``alpha = 0`` the path is exactly the
+    rectified elementwise Milstein term ``relu(0.5*m*m'*(dW^2 - dt_var))``.
+    With ``alpha = 0`` the path is exactly the
     Euler-Maruyama step. The terminal step returns denoised directly.
     """
     _check_finite(x, "x")
@@ -382,8 +396,18 @@ def milstein_step(
         return denoised.clone()
     a = _validate_alpha(alpha)
     scale = _validate_k(k)
-    eta_val = float(eta)
-    s_noise_val = float(s_noise)
+    try:
+        eta_val = float(eta)
+    except Exception:
+        raise ValueError("eta must be a nonnegative finite float")
+    if not math.isfinite(eta_val) or not eta_val >= 0.0:
+        raise ValueError("eta must be a nonnegative finite float")
+    try:
+        s_noise_val = float(s_noise)
+    except Exception:
+        raise ValueError("s_noise must be a nonnegative finite float")
+    if not math.isfinite(s_noise_val) or not s_noise_val >= 0.0:
+        raise ValueError("s_noise must be a nonnegative finite float")
     sigma_down, sigma_up = _get_ancestral_step(sigma, sigma_next, eta=eta_val)
     d = _to_d(x, sigma, denoised)
     dt = sigma_down - sigma
@@ -417,16 +441,16 @@ def milstein_step(
     _check_finite(noise, "noise")
     dW = noise.to(device=x.device, dtype=x.dtype) * s_noise_val * float(sigma_up)
     dt_var = float(s_noise_val * float(sigma_up)) ** 2
-    m = milstein_scale(x, alpha=a, k=scale).to(device=x.device, dtype=x.dtype)
-    mp = milstein_scale_derivative(x, alpha=a, k=scale).to(device=x.device, dtype=x.dtype)
+    m = milstein_relu_scale(x, alpha=a, k=scale).to(device=x.device, dtype=x.dtype)
+    mp = milstein_relu_scale_derivative(x, alpha=a, k=scale).to(device=x.device, dtype=x.dtype)
     x_next = x_next + m * dW
-    x_next = x_next + milstein_correction(m, mp, dW, dt_var)
+    x_next = x_next + milstein_relu_correction(m, mp, dW, dt_var)
     _check_finite(x_next, "update")
     return x_next
 
 
 @torch.no_grad()
-def sample_milstein(
+def sample_milstein_relu(
     model,
     x: torch.Tensor,
     sigmas: torch.Tensor,
@@ -436,19 +460,19 @@ def sample_milstein(
     eta: float = 1.0,
     s_noise: float = 1.0,
     noise_sampler=None,
-    alpha: float = MILSTEIN_DEFAULT_ALPHA,
-    k: float = MILSTEIN_DEFAULT_K,
+    alpha: float = MILSTEIN_RELU_DEFAULT_ALPHA,
+    k: float = MILSTEIN_RELU_DEFAULT_K,
 ) -> torch.Tensor:
-    """Sample from noise to clean with diagonal Milstein steps.
+    """Sample from noise to clean with rectified diagonal Milstein steps.
 
     Each step moves along the Euler drift to ``sigma_down``, reinjects
-    state-modulated noise ``m * dW``, and adds the elementwise Milstein
-    correction. With ``alpha = 0`` the run matches the ancestral
+    state-modulated noise ``m * dW``, and adds the rectified elementwise Milstein
+    correction ``relu(0.5*m*m'*(dW^2 - dt_var))``. With ``alpha = 0`` the run matches the ancestral
     Euler-Maruyama sampler bit-identically. With ``eta = 0`` the noise
     part vanishes. Rectified-flow models fail closed (see RF twin).
     """
     if _is_const_rf_model(model):
-        return sample_milstein_RF(
+        return sample_milstein_relu_RF(
             model,
             x,
             sigmas,
@@ -471,11 +495,11 @@ def sample_milstein(
     if not isinstance(extra_args, dict):
         raise ValueError("extra_args must be a dict")
     eta_val = float(eta)
-    if not eta_val >= 0.0:
-        raise ValueError("eta must be nonnegative")
+    if not math.isfinite(eta_val) or not eta_val >= 0.0:
+        raise ValueError("eta must be a nonnegative finite float")
     s_noise_val = float(s_noise)
-    if not s_noise_val >= 0.0:
-        raise ValueError("s_noise must be nonnegative")
+    if not math.isfinite(s_noise_val) or not s_noise_val >= 0.0:
+        raise ValueError("s_noise must be a nonnegative finite float")
     a = _validate_alpha(alpha)
     scale = _validate_k(k)
     seed = extra_args.get("seed", None)
@@ -535,12 +559,12 @@ def sample_milstein(
                     raise ValueError("noise shape must match input shape")
                 dW = noise.to(device=cur.device, dtype=cur.dtype) * s_noise_val * float(sigma_up)
                 dt_var = float(s_noise_val * float(sigma_up)) ** 2
-                m = milstein_scale(cur, alpha=a, k=scale).to(device=cur.device, dtype=cur.dtype)
-                mp = milstein_scale_derivative(cur, alpha=a, k=scale).to(
+                m = milstein_relu_scale(cur, alpha=a, k=scale).to(device=cur.device, dtype=cur.dtype)
+                mp = milstein_relu_scale_derivative(cur, alpha=a, k=scale).to(
                     device=cur.device, dtype=cur.dtype
                 )
                 x_next = x_next + m * dW
-                x_next = x_next + milstein_correction(m, mp, dW, dt_var)
+                x_next = x_next + milstein_relu_correction(m, mp, dW, dt_var)
         # Preserve dtype and device exactly, batch shape is untouched.
         if tuple(x_next.shape) != tuple(cur.shape):
             raise ValueError("update shape must match input shape")
@@ -550,7 +574,7 @@ def sample_milstein(
 
 
 @torch.no_grad()
-def sample_milstein_RF(
+def sample_milstein_relu_RF(
     model,
     x: torch.Tensor,
     sigmas: torch.Tensor,
@@ -560,13 +584,13 @@ def sample_milstein_RF(
     eta: float = 1.0,
     s_noise: float = 1.0,
     noise_sampler=None,
-    alpha: float = MILSTEIN_DEFAULT_ALPHA,
-    k: float = MILSTEIN_DEFAULT_K,
+    alpha: float = MILSTEIN_RELU_DEFAULT_ALPHA,
+    k: float = MILSTEIN_RELU_DEFAULT_K,
 ) -> torch.Tensor:
-    """Rectified-flow twin for the Milstein sampler (deferred).
+    """Rectified-flow twin for the Milstein-ReLU sampler (deferred).
 
     Rectified-flow support is deferred by design. This stub always fails
     closed so CONST schedules never silently fall back to an unreviewed
     path.
     """
-    raise NotImplementedError("sample_milstein_RF is deferred for rectified-flow schedules")
+    raise NotImplementedError("sample_milstein_relu_RF is deferred for rectified-flow schedules")
