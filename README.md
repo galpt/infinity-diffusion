@@ -63,6 +63,7 @@ def sample_milstein_relu(
 > [!NOTE]
 > - Both samplers at 832x1216, 30 steps, CFG 7.0, seed 377020409264109, Normal scheduler, same model (waiMatureIllustrious_v30.safetensors).
 > - Fullchain output is 1248x1824 via hires (10 steps, CFG 6.0, denoise 0.32, 1.5x) plus face (denoise 0.25, guide 512, face_yolov8m.pt) / eye (denoise 0.35, guide 384, eye_yolov8m.pt) detailers (10 steps each, CFG 6.0). Run manifest lives in `assets/milfullchain_manifest.json`.
+> - Eye render used `bbox/eye_yolov8s.pt` + drop 9 (`eye_yolov8m.pt` absent at render time; see manifest). Asset prefix `milstein` = `milstein_relu`.
 
 Positive prompt:
 

@@ -94,7 +94,7 @@
   "prompts": "MAIN-BRANCH origin/main README Benchmark fences byte-verbatim (SFW)",
   "positive_sha256": "0c10744615fe6edcc06fcabe48db84eb91455fed93d56c465e9e552009ce0f7c",
   "negative_sha256": "969ca3f7f0bc06b495c6a0efa4a1f67262264c8f028be8580d897efe71db5895",
-  "readme_sha256": "a04b03c2f77c58b807edc97770b948f6d4ab8e4b0709ff3a51b568ff63ba8df9",
+  "readme_sha256": "407132ce5c5f4bb63ae0ee62c09c3d29626eb36abb8ab4d059afb63851d5b8fd",
   "mode": "fullchain (hires/detailers ON)",
   "nfe_max_per_render": 60,
   "nfe_note": "1 NFE per step per sampling stage; detailer NFE conditional on bbox detection (max shown); scheduler sigmas derived server-side by ComfyUI normal scheduler for SDXL",
