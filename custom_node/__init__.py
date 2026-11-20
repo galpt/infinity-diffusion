@@ -1,58 +1,26 @@
-"""ComfyUI custom node for Milstein-ReLU, sampler only."""
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Galih Tama
+"""Register the milstein_ewma sampler with ComfyUI.
 
-import os
-import sys
+KSampler resolves a sampler name to comfy.k_diffusion.sampling.sample_<name>.
+The sampler widgets of KSampler, KSamplerAdvanced and KSamplerSelect list
+comfy.samplers.SAMPLER_NAMES, which ComfyUI builds as KSAMPLER_NAMES plus
+the samplers that do not go through k-diffusion. The name is appended to
+both lists so that relation still holds for code that reads either one.
+The pack adds no nodes and no scheduler.
+"""
 
-_node_dir = os.path.dirname(os.path.abspath(__file__))
-_candidates = (_node_dir, os.path.dirname(_node_dir))
-for _p in _candidates:
-    _p = os.path.abspath(_p)
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+import comfy.k_diffusion.sampling
+import comfy.samplers
 
-try:
-    import comfy.samplers as samplers
+from .milstein_ewma_diffusion import sample_milstein_ewma
 
-    _has_comfy = True
-except Exception:
-    samplers = None
-    _has_comfy = False
+SAMPLER_NAME = "milstein_ewma"
 
-try:
-    from milstein_relu_diffusion import sample_milstein_relu as _sampler_fn
-except Exception:
-    _sampler_fn = None
+comfy.k_diffusion.sampling.sample_milstein_ewma = sample_milstein_ewma
+for names in (comfy.samplers.KSAMPLER_NAMES, comfy.samplers.SAMPLER_NAMES):
+    if SAMPLER_NAME not in names:
+        names.append(SAMPLER_NAME)
 
-_NAME = "milstein_relu"
-
-
-def _register(name, fn):
-    """Register one sampler name with ComfyUI side effects."""
-    if not (_has_comfy and fn is not None):
-        return False
-    try:
-        import comfy.k_diffusion.sampling as _sampling
-
-        setattr(_sampling, "sample_" + name, fn)
-        for _attr in ("KSAMPLER_NAMES", "SAMPLER_NAMES"):
-            _lst = getattr(samplers, _attr, None)
-            if isinstance(_lst, list) and name not in _lst:
-                _lst.append(name)
-        return True
-    except Exception:
-        return False
-
-
-# Sampler only, no scheduler is registered here.
-_registered = _register(_NAME, _sampler_fn)
-
-if _registered:
-    # Short note, kept plain for the console.
-    print("# Registered milstein_relu sampler")
-elif not _has_comfy:
-    # Plain note, ComfyUI is simply absent here.
-    print("# milstein_relu sampler skipped, ComfyUI was not found")
-
-# No custom nodes, sampler is registered through side effects above.
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
