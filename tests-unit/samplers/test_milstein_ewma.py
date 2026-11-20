@@ -201,8 +201,8 @@ def test_zero_alpha_zero_forecast_equals_euler_ancestral(sigmas, eta):
     (BASE_SIGMAS, "MMMMMMFFMFFMFFM"),
     (HIRES_SIGMAS, "MMFMFMFMFM"),
 ])
-def test_default_plan_pattern_on_workflow_schedules(sigmas, pattern):
-    """The default plan gives the expected forecast pattern on the two workflow schedules."""
+def test_default_plan_pattern_on_base_and_hires_schedules(sigmas, pattern):
+    """The default plan gives the expected pattern on the 15-step base and 10-step hires schedules."""
     assert _pattern(_default_plan(sigmas), len(sigmas) - 1) == pattern
 
 

@@ -4,7 +4,7 @@
 
 Milstein-EWMA is a ComfyUI sampler that integrates the reverse diffusion with a diagonal Milstein scheme and calls the model on fewer steps. Each step follows the ancestral Euler-Maruyama update, scales the re-injected noise with a bounded state-dependent multiplier and adds the elementwise Milstein correction `0.5*m*m'*(dW^2 - Var[dW])`. On up to 40% of the steps the model is not called, and an exponentially weighted moving average (EWMA) of the earlier denoised outputs is used in its place. Those steps are taken from the low-noise end of the schedule, where the structure of the image is already fixed.
 
-With `forecast_ratio = 0` every step calls the model and the sampler is the plain diagonal Milstein sampler. With `alpha = 0` as well and `eta` at most 1, it matches `euler_ancestral` bit for bit.
+With `forecast_ratio = 0` every step calls the model and the sampler is the plain diagonal Milstein sampler, `milstein`, from the `sampler/milstein-diagonal` branch of this repository. With `alpha = 0` as well and `eta` at most 1, it matches `euler_ancestral` bit for bit.
 
 ## Installation
 
@@ -92,6 +92,7 @@ M M F M F M F M F M
 ## Benchmark
 
 > [!NOTE]
+> - `milstein` and `milstein_relu` are the samplers from the `sampler/milstein-diagonal` and `sampler/milstein-relu` branches of this repository. Both call the model on every step.
 > - RTX 3050 Laptop GPU (4 GB), ComfyUI 0.46.0, torch 2.14.1+cu130 with SageAttention, checkpoint `waiMatureIllustrious_v30.safetensors`.
 > - Base pass at 832x1216, 30 steps, CFG 7.0, normal scheduler, seed 377020409264109. Hires pass (1.5x latent upscale, 10 steps, CFG 6.0, denoise 0.32), then face (`face_yolov8m.pt`, denoise 0.25, guide 512) and eye (`eye_yolov8s.pt`, denoise 0.35, guide 384) detailers with 10 steps and CFG 6.0 each. The output is 1248x1824 and every pass uses the sampler under test.
 > - Each figure is the mean of two runs taken in turn with the other samplers after a warmup run. Both runs of a sampler gave the same pixels. The settings, timings and file hashes are in `assets/fullchain_manifest.json`.
@@ -104,11 +105,11 @@ Wall time per pass in seconds, with sampling speed in steps per second in bracke
 | Hires, 10 steps | 25.80 (0.390) | 25.82 (0.390) | 15.56 (0.702) | 1.66x (1.80x) |
 | Face detailer, 10 steps | 28.51 (0.444) | 28.23 (0.449) | 20.32 (0.757) | 1.39x (1.69x) |
 | Eye detailer, 10 steps per eye | 12.12 (1.978) | 12.12 (1.977) | 8.39 (3.404) | 1.45x (1.72x) |
-| Whole prompt | 105.21 | 104.78 | 69.22 | 1.51x |
+| Whole run | 105.21 | 104.78 | 69.22 | 1.51x |
 
-The detailers spend part of their time on detection, cropping and VAE work that the sampler does not touch, which is why their wall time gains less than their sampling speed. On a second workflow with a 15-step base pass at 1152x896 followed by the same three passes, the whole prompt took 49.4 s with `milstein_ewma` against 76.4 s with `milstein`, 1.55 times faster.
+The detailers spend part of their time on detection, cropping and VAE work that the sampler does not touch, which is why their wall time gains less than their sampling speed. With a different prompt and a 15-step base pass at 1152x896 and CFG 6.0, followed by the same three passes, the whole run took 49.4 s with `milstein_ewma` against 76.4 s with `milstein`, 1.55 times faster.
 
-With the karras scheduler the defaults keep the speed but give up more detail. Over three seeds at 20 steps (base pass only, same prompts at 832x1216), `milstein_ewma` ran 1.65 times faster and scored a mean LPIPS of 0.225 against `milstein`, where `milstein_relu` scored 0.167 and a 12-step `milstein` run, with the same 12 model calls, scored 0.428. Karras puts 12 of its 20 steps below a sigma of 3, so the plan forecasts two out of every three of them, starting near sigma 2. Those early forecast pairs changed small background details such as light particles, while the subject and composition stayed the same.
+With the karras scheduler the defaults keep the speed but give up more detail. Over three seeds at 20 steps (base pass only, at 832x1216 with the prompts below), `milstein_ewma` ran 1.65 times faster and scored a mean LPIPS of 0.225 against `milstein`, where `milstein_relu` scored 0.167 and a 12-step `milstein` run, with the same 12 model calls, scored 0.428. Karras puts 12 of its 20 steps below a sigma of 3, so the plan forecasts two out of every three of them, starting near sigma 2. Those early forecast pairs changed small background details such as light particles, while the subject and composition stayed the same.
 
 Positive prompt:
 
@@ -139,11 +140,11 @@ lowres, bad anatomy, bad hands, text, error, missing finger, worst quality, low 
 </tr>
 </table>
 
-Against the `milstein` image, the `milstein_ewma` image scores PSNR 23.02 dB, SSIM 0.799 and LPIPS 0.187. For comparison, `milstein_relu` scores 20.43 dB, 0.754 and 0.203 against the same image, so dropping 40% of the model calls moves the result less than the ReLU rectification did.
+Against the `milstein` image, the `milstein_ewma` image scores PSNR 23.02 dB, SSIM 0.799 and LPIPS 0.187. For comparison, `milstein_relu` scores 20.43 dB, 0.754 and 0.203 against the same image, so skipping 40% of the model calls moves the result less than the change from `milstein` to `milstein_relu` does.
 
 ### Forecast choices
 
-The forecast and its placement were chosen on the 15-step base pass of the second workflow. Each row runs 15 steps unless stated, and the score is the mean LPIPS against `milstein` over three seeds (lower is closer).
+These variants were compared before the forecast and its placement were settled. Each is a 15-step base pass at 1152x896 with CFG 6.0, the normal scheduler and a prompt other than the one above, except the 9-step `milstein` row. The score is the mean LPIPS against the 15-step `milstein` result over three seeds (lower is closer).
 
 | Variant | Model calls | LPIPS |
 |---|---|---|
@@ -152,8 +153,8 @@ The forecast and its placement were chosen on the 15-step base pass of the secon
 | Last output reused, alternate steps after the first two | 9 | 0.427 |
 | Damped Holt trend, alternate steps after the first two | 9 | 0.412 |
 | EWMA level, alternate steps after the first two | 9 | 0.395 |
-| Last output reused, low-sigma plan | 9 | 0.199 |
-| EWMA level, low-sigma plan (`milstein_ewma`) | 9 | 0.173 |
+| Last output reused, default plan | 9 | 0.199 |
+| EWMA level, default plan (`milstein_ewma`) | 9 | 0.173 |
 
 Spending the same nine model calls on a shorter schedule is the worst option. Moving the forecast steps to the low-sigma end matters most, and the EWMA level beats both reusing the last output and extrapolating a trend.
 
