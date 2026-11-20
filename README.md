@@ -31,6 +31,8 @@ bash comfy-milstein-ewma.sh /path/to/ComfyUI uninstall
 
 After a ComfyUI restart, KSampler lists `milstein_ewma` among the samplers. Scheduling stays with the built-in schedulers. KSampler passes no options to a sampler, so it always runs with the defaults below.
 
+Use 15 to 30 steps for the base pass at denoise 1.0. Fewer than 15 steps are not recommended, because each forecast step then stands in for a larger drop in sigma, and the defaults were tested at 15 and 30 steps. Hires and detailer passes at low denoise were tested at 10 steps, as in the benchmark below.
+
 ## Signatures
 
 ```python
