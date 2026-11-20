@@ -1,0 +1,48 @@
+{
+ "description": "Full-chain renders for the README Benchmark section, produced through the ComfyUI server API.",
+ "environment": {
+  "gpu": "NVIDIA GeForce RTX 3050 Laptop GPU (4 GB)",
+  "comfyui_commit": "4806189defb09ecbfd13b70aab72efe8d6ed4d78",
+  "torch": "2.14.1+cu130",
+  "attention": "SageAttention (--use-sage-attention)",
+  "checkpoint": "waiMatureIllustrious_v30.safetensors",
+  "milstein_ewma_diffusion_py_sha256": "936c92874eb0c0a92bf9909cb8ca66cefe1263e257a791aeb66997db464c4c67"
+ },
+ "prompts": {
+  "positive_sha256": "0c10744615fe6edcc06fcabe48db84eb91455fed93d56c465e9e552009ce0f7c",
+  "negative_sha256": "969ca3f7f0bc06b495c6a0efa4a1f67262264c8f028be8580d897efe71db5895"
+ },
+ "stages": {
+  "base": {"node": "KSampler", "latent": "EmptyLatentImage 832x1216", "steps": 30, "cfg": 7.0, "scheduler": "normal", "denoise": 1.0, "seed": 377020409264109},
+  "hires": {"node": "LatentUpscaleBy nearest-exact 1.5 + KSampler", "steps": 10, "cfg": 6.0, "scheduler": "normal", "denoise": 0.32, "seed": 377020409264109},
+  "face": {"node": "FaceDetailer", "detector": "bbox/face_yolov8m.pt", "steps": 10, "cfg": 6.0, "scheduler": "normal", "denoise": 0.25, "guide_size": 512, "feather": 5, "drop_size": 10, "seed": 377020409264109},
+  "eye": {"node": "FaceDetailer", "detector": "bbox/eye_yolov8s.pt", "steps": 10, "cfg": 6.0, "scheduler": "normal", "denoise": 0.35, "guide_size": 384, "feather": 3, "drop_size": 9, "seed": 377020409264109}
+ },
+ "method": "One discarded warmup run, then two interleaved rounds of milstein_relu, milstein and milstein_ewma with models kept loaded. Stage wall time runs from the stage's executing message to the next one. Steps per second cover steps 2 to N of each stage, taken from the progress messages. Every sampler gave pixel-identical images in both rounds.",
+ "results": {
+  "milstein_relu": {
+   "stage_wall_s": {"base": 34.33, "hires": 25.80, "face": 28.51, "eye": 12.12},
+   "steps_per_s": {"base": 0.879, "hires": 0.390, "face": 0.444, "eye": 1.978},
+   "prompt_total_s": 105.21,
+   "vs_milstein": {"psnr_db": 20.43, "ssim": 0.754, "lpips_alex": 0.203}
+  },
+  "milstein": {
+   "stage_wall_s": {"base": 34.34, "hires": 25.82, "face": 28.23, "eye": 12.12},
+   "steps_per_s": {"base": 0.878, "hires": 0.390, "face": 0.449, "eye": 1.977},
+   "prompt_total_s": 104.78,
+   "file": "fullchain_milstein_normal_30s_cfg7_seed377020409264109_832x1216.png",
+   "file_sha256": "72a2013d71d8f9818460d07a64d7645a597cabd257f3944b8c9df9d9b986b6bc"
+  },
+  "milstein_ewma": {
+   "stage_wall_s": {"base": 20.69, "hires": 15.56, "face": 20.32, "eye": 8.39},
+   "steps_per_s": {"base": 1.497, "hires": 0.702, "face": 0.757, "eye": 3.404},
+   "prompt_total_s": 69.22,
+   "model_calls_per_sampling_pass": {"base": 18, "hires": 6, "face": 6, "eye": 6},
+   "vs_milstein": {"psnr_db": 23.02, "ssim": 0.799, "lpips_alex": 0.187},
+   "file": "fullchain_milstein_ewma_normal_30s_cfg7_seed377020409264109_832x1216.png",
+   "file_sha256": "ed9fac4453b32c6e5a88f4183ad2234c94858e7e2976e176cfbd72888b2e6d0d"
+  }
+ },
+ "notes": "milstein and milstein_relu call the model on every step: 30, 10, 10 and 10 per pass. The eye stage ran two passes, one per detected eye.",
+ "output_size": "1248x1824"
+}
